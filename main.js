@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => MeridianWardrobePlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian33 = require("obsidian");
+var import_obsidian34 = require("obsidian");
 
 // ../../packages/core/dist/settings/framework.js
 function mergeSettings(defaults, loaded) {
@@ -388,6 +388,7 @@ var CONTEXT_TAGS = [
   "sleep",
   "travel"
 ];
+var COLOR_SUGGESTIONS = ["black", "white", "grey", "cream", "beige", "brown", "tan", "navy", "blue", "teal", "green", "olive", "red", "maroon", "pink", "purple", "orange", "yellow", "gold", "silver"];
 var DEFAULT_WEAR_LIMIT = {
   underwear: 1,
   bra: 2,
@@ -631,13 +632,15 @@ var DEFAULT_SETTINGS = {
   tripsPath: "Wardrobe/Trips.md",
   wishlistPath: "Wardrobe/Wishlist.md",
   catalogPath: "Wardrobe/Packing Catalog.md",
+  schedulePath: "Wardrobe/Outfit Schedule.md",
   shoppingPath: "Shopping.md",
   shoppingListName: "Shopping",
   clothingBackup: [],
   outfitsBackup: [],
   tripsBackup: [],
   wishlistBackup: [],
-  catalogBackup: []
+  catalogBackup: [],
+  scheduleBackup: []
 };
 var WardrobeSettingTab = class extends import_obsidian26.PluginSettingTab {
   constructor(app, plugin) {
@@ -712,11 +715,17 @@ function isCatalogEntry(r) {
   const o = r;
   return typeof o.id === "string" && typeof o.name === "string";
 }
+function isScheduledOutfit(r) {
+  if (!r || typeof r !== "object") return false;
+  const o = r;
+  return typeof o.id === "string" && typeof o.date === "string" && typeof o.outfitId === "string";
+}
 var CLOTHING_HEADER = "%% Meridian Wardrobe \u2014 clothing items. Managed automatically; edit these in the dashboard, not here. %%";
 var OUTFITS_HEADER = "%% Meridian Wardrobe \u2014 outfits. Managed automatically; edit these in the dashboard, not here. %%";
 var WISHLIST_HEADER = "%% Meridian Wardrobe \u2014 clothing wishlist. Managed automatically; edit these in the dashboard, not here. %%";
 var TRIPS_HEADER = "%% Meridian Wardrobe \u2014 trips & packing. Managed automatically; edit these in the dashboard, not here. %%";
 var CATALOG_HEADER = "%% Meridian Wardrobe \u2014 packing autocomplete catalog. Managed automatically. %%";
+var SCHEDULE_HEADER = "%% Meridian Wardrobe \u2014 scheduled outfits (planned by day). Managed automatically; edit these in the dashboard, not here. %%";
 
 // src/view.ts
 var import_obsidian27 = require("obsidian");
@@ -902,6 +911,10 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     for (const tag of item.tags) meta.createSpan({ cls: "mrw-badge mrw-tag", text: tag });
     if (st.damaged) meta.createSpan({ cls: "mrw-badge mrw-warn", text: `${st.damaged} damaged` });
     if (st.needsReplacement) meta.createSpan({ cls: "mrw-badge mrw-bad", text: `${st.needsReplacement} to replace` });
+    if (multi) {
+      const colors = [...new Set(item.units.map((u) => u.color).filter((c) => !!c))];
+      for (const c of colors) this.colorDot(meta, c);
+    }
     const actions = top.createDiv({ cls: "mrw-actions" });
     const statusText = multi ? `${st.wearableUnits}/${st.total - st.retired} ready` : this.unitStateLabel(item, item.units[0]);
     actions.createSpan({ cls: "mrw-status " + (st.available ? "mrw-ok" : "mrw-out"), text: statusText });
@@ -925,6 +938,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     item.units.forEach((u, i) => {
       const ur = wrap.createDiv({ cls: "mrw-unit" + (u.retired ? " mrw-retired" : "") });
       ur.createSpan({ cls: "mrw-unit-n", text: `#${i + 1}` });
+      this.colorChip(ur, u.color, () => this.plugin.openUnitColor(item.id, u.id));
       const wearable = isUnitWearable(u, limit);
       ur.createSpan({ cls: "mrw-unit-state " + (wearable ? "mrw-ok" : "mrw-out"), text: this.unitStateLabel(item, u) });
       const ua = ur.createDiv({ cls: "mrw-unit-actions" });
@@ -957,6 +971,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
       menu.addSeparator();
       menu.addItem((i) => i.setTitle(u.condition === "damaged" ? "Clear damaged" : "Mark damaged").setIcon("alert-triangle").onClick(() => void this.plugin.setUnitCondition(item.id, u.id, u.condition === "damaged" ? "ok" : "damaged")));
       menu.addItem((i) => i.setTitle(u.condition === "needs-replacement" ? "Clear needs-replacement" : "Needs replacement").setIcon("circle-x").onClick(() => void this.plugin.setUnitCondition(item.id, u.id, u.condition === "needs-replacement" ? "ok" : "needs-replacement")));
+      menu.addItem((i) => i.setTitle(u.color ? `Colour: ${u.color}` : "Set colour\u2026").setIcon("palette").onClick(() => this.plugin.openUnitColor(item.id, u.id)));
     }
     menu.addSeparator();
     menu.addItem((i) => i.setTitle("Add another copy").setIcon("copy-plus").onClick(() => void this.plugin.addUnit(item.id)));
@@ -972,6 +987,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     const menu = new import_obsidian27.Menu();
     menu.addItem((i) => i.setTitle("Mark clean").setIcon("check").onClick(() => void this.plugin.setUnitWash(item.id, u.id, "clean")));
     menu.addItem((i) => i.setTitle("Mark dirty").setIcon("droplet").onClick(() => void this.plugin.setUnitWash(item.id, u.id, "dirty")));
+    menu.addItem((i) => i.setTitle(u.color ? `Colour: ${u.color}` : "Set colour\u2026").setIcon("palette").onClick(() => this.plugin.openUnitColor(item.id, u.id)));
     menu.addSeparator();
     menu.addItem((i) => i.setTitle(u.condition === "damaged" ? "Clear damaged" : "Mark damaged").setIcon("alert-triangle").onClick(() => void this.plugin.setUnitCondition(item.id, u.id, u.condition === "damaged" ? "ok" : "damaged")));
     menu.addItem((i) => i.setTitle(u.condition === "needs-replacement" ? "Clear needs-replacement" : "Needs replacement").setIcon("circle-x").onClick(() => void this.plugin.setUnitCondition(item.id, u.id, u.condition === "needs-replacement" ? "ok" : "needs-replacement")));
@@ -986,9 +1002,48 @@ var WardrobeView = class extends import_obsidian27.ItemView {
       root.createDiv({ cls: "mrw-warning", text: "\u26A0 The outfits file couldn't be read this session; it's being preserved untouched. It will recover on the next sync." });
     }
     const outfits = this.plugin.outfits.getAll();
+    this.renderScheduled(root, outfits);
     this.renderOutfitFilterBar(root, outfits);
     this.outfitResultsEl = root.createDiv({ cls: "mrw-results" });
     this.renderOutfitResults();
+  }
+  /** Upcoming planned outfits (today onward), soonest first. */
+  renderScheduled(root, outfits) {
+    const today = this.plugin.isoDate(0);
+    const upcoming = this.plugin.schedule.getAll().filter((s) => s.date >= today).sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order);
+    if (upcoming.length === 0) return;
+    root.createEl("h4", { cls: "mrw-section-h", text: "Scheduled" });
+    const availSet = this.plugin.availableItemIds();
+    const isAvail = (id) => availSet.has(id);
+    const list = root.createDiv({ cls: "mrw-list" });
+    for (const s of upcoming) {
+      const o = outfits.find((x) => x.id === s.outfitId);
+      const row = list.createDiv({ cls: "mrw-row" });
+      const top = row.createDiv({ cls: "mrw-row-top" });
+      const main = top.createDiv({ cls: "mrw-row-main" });
+      const line = main.createDiv({ cls: "mrw-sched-line" });
+      line.createSpan({ cls: "mrw-badge mrw-date", text: this.dateLabel(s.date) });
+      if (o) {
+        const nameEl = line.createSpan({ cls: "mrw-name", text: o.name });
+        nameEl.onclick = () => this.plugin.editOutfit(o);
+      } else {
+        line.createSpan({ cls: "dash-muted mrw-out", text: "(deleted outfit)" });
+      }
+      if (s.note) line.createSpan({ cls: "mrw-badge mrw-tag", text: s.note });
+      const actions = top.createDiv({ cls: "mrw-actions" });
+      if (o) {
+        const av = resolveOutfit(o, isAvail);
+        actions.createSpan({ cls: "mrw-status " + (!av.available ? "mrw-out" : av.usesAlternatives ? "mrw-alt" : "mrw-ok"), text: !av.available ? "Unavailable" : av.usesAlternatives ? "Via alternatives" : "Ready" });
+      }
+      this.iconBtn(actions, "x", "Unschedule", () => void this.plugin.unscheduleOutfit(s.id));
+    }
+  }
+  dateLabel(iso) {
+    if (iso === this.plugin.isoDate(0)) return "Today";
+    if (iso === this.plugin.isoDate(1)) return "Tomorrow";
+    const d = /* @__PURE__ */ new Date(iso + "T00:00:00");
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString(void 0, { weekday: "short", month: "short", day: "numeric" });
   }
   renderOutfitFilterBar(root, all) {
     var _a, _b, _c, _d, _e, _f;
@@ -1083,6 +1138,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     }
     actions.createSpan({ cls: "mrw-status " + statusCls, text: statusText });
     this.iconBtn(actions, "shirt", "Wear outfit", () => void this.plugin.wearOutfit(outfit.id), !av.available);
+    this.iconBtn(actions, "calendar-plus", "Schedule for a day", () => this.plugin.openScheduleOutfit(outfit.id));
     this.iconBtn(actions, "washing-machine", "Send all to laundry", () => void this.plugin.markOutfitForLaundry(outfit.id));
     this.iconBtn(actions, "more-vertical", "More", (e) => this.outfitMenu(e, outfit));
     const slots = row.createDiv({ cls: "mrw-slot-lines" });
@@ -1105,6 +1161,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     const menu = new import_obsidian27.Menu();
     menu.addItem((i) => i.setTitle("Edit").setIcon("pencil").onClick(() => this.plugin.editOutfit(outfit)));
     menu.addItem((i) => i.setTitle("Wear (log all items)").setIcon("shirt").onClick(() => void this.plugin.wearOutfit(outfit.id)));
+    menu.addItem((i) => i.setTitle("Schedule for a day\u2026").setIcon("calendar-plus").onClick(() => this.plugin.openScheduleOutfit(outfit.id)));
     menu.addItem((i) => i.setTitle("Send all to laundry").setIcon("washing-machine").onClick(() => void this.plugin.markOutfitForLaundry(outfit.id)));
     menu.addSeparator();
     if (!outfit.retired) menu.addItem((i) => i.setTitle("Retire").setIcon("archive").onClick(() => void this.plugin.retireOutfit(outfit.id)));
@@ -1307,6 +1364,28 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     };
   }
   // ---------------------------------------------------------------- util
+  /** A colour swatch (named CSS colours render as the colour; others show neutral). */
+  colorDot(parent, color) {
+    const dot = parent.createSpan({ cls: "mrw-color-dot mrw-inline-dot", attr: { title: color } });
+    if (this.cssColor(color)) dot.style.background = color;
+    else dot.addClass("mrw-color-none");
+    return dot;
+  }
+  /** A clickable colour chip for a unit: swatch + optional name, opens the picker. */
+  colorChip(parent, color, onClick) {
+    const b = parent.createEl("button", { cls: "mrw-color-chip", attr: { "aria-label": "Set colour", title: color || "Set colour" } });
+    const dot = b.createSpan({ cls: "mrw-color-dot" });
+    if (color && this.cssColor(color)) dot.style.background = color;
+    else dot.addClass("mrw-color-none");
+    if (color) b.createSpan({ cls: "mrw-color-name", text: color });
+    b.onclick = onClick;
+    return b;
+  }
+  cssColor(c) {
+    var _a;
+    const supports = (_a = window.CSS) == null ? void 0 : _a.supports;
+    return supports ? supports("color", c) : true;
+  }
   iconBtn(parent, icon, label, onClick, disabled = false) {
     const b = parent.createEl("button", { cls: "mrw-icon-btn", attr: { "aria-label": label, title: label } });
     (0, import_obsidian27.setIcon)(b, icon);
@@ -1766,8 +1845,86 @@ var TripEditModal = class extends import_obsidian32.Modal {
   }
 };
 
+// src/prompts.ts
+var import_obsidian33 = require("obsidian");
+var ColorPromptModal = class extends import_obsidian33.Modal {
+  constructor(app, current, onSubmit) {
+    super(app);
+    this.onSubmit = onSubmit;
+    this.value = current != null ? current : "";
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "Copy colour" });
+    const swatch = contentEl.createDiv({ cls: "mrw-color-preview" });
+    const dot = swatch.createSpan({ cls: "mrw-color-dot" });
+    const paint = () => {
+      var _a;
+      dot.style.background = this.value && ((_a = CSS.supports) == null ? void 0 : _a.call(CSS, "color", this.value)) ? this.value : "transparent";
+    };
+    const listId = "mrw-colors-" + Math.random().toString(36).slice(2, 8);
+    const datalist = contentEl.createEl("datalist");
+    datalist.id = listId;
+    for (const c of COLOR_SUGGESTIONS) datalist.createEl("option", { value: c });
+    new import_obsidian33.Setting(contentEl).setName("Colour").addText((t) => {
+      t.setPlaceholder("blue, grey, black\u2026").setValue(this.value);
+      t.inputEl.setAttribute("list", listId);
+      t.inputEl.focus();
+      t.onChange((v) => {
+        this.value = v.trim();
+        paint();
+      });
+      t.inputEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          this.commit();
+        }
+      });
+    });
+    paint();
+    new import_obsidian33.Setting(contentEl).addButton((b) => b.setButtonText("Clear").onClick(() => this.commit(true))).addButton((b) => b.setButtonText("Save").setCta().onClick(() => this.commit()));
+  }
+  commit(clear = false) {
+    this.onSubmit(clear || !this.value ? void 0 : this.value);
+    this.close();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var DatePromptModal = class extends import_obsidian33.Modal {
+  constructor(app, defaultDate, onSubmit) {
+    super(app);
+    this.onSubmit = onSubmit;
+    this.note = "";
+    this.date = defaultDate;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "Schedule outfit" });
+    new import_obsidian33.Setting(contentEl).setName("Date").addText((t) => {
+      t.inputEl.type = "date";
+      t.setValue(this.date).onChange((v) => this.date = v);
+      t.inputEl.focus();
+    });
+    new import_obsidian33.Setting(contentEl).setName("Occasion").setDesc("Optional (work, dinner\u2026).").addText((t) => t.setPlaceholder("optional").onChange((v) => this.note = v.trim()));
+    new import_obsidian33.Setting(contentEl).addButton((b) => b.setButtonText("Cancel").onClick(() => this.close())).addButton(
+      (b) => b.setButtonText("Schedule").setCta().onClick(() => {
+        if (!this.date) return;
+        this.onSubmit(this.date, this.note || void 0);
+        this.close();
+      })
+    );
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
 // src/main.ts
-var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
+var MeridianWardrobePlugin = class extends import_obsidian34.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -1826,6 +1983,16 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
         void this.saveSettings();
       }
     });
+    this.schedule = new JsonListStore(this.app, () => this.settings.schedulePath, {
+      header: SCHEDULE_HEADER,
+      defaultPath: DEFAULT_SETTINGS.schedulePath,
+      isValid: isScheduledOutfit,
+      getBackup: () => this.settings.scheduleBackup,
+      setBackup: (records) => {
+        this.settings.scheduleBackup = records;
+        void this.saveSettings();
+      }
+    });
     this.registerView(VIEW_TYPE_WARDROBE, (leaf) => new WardrobeView(leaf, this));
     this.addRibbonIcon("shirt", "Open Meridian Wardrobe", () => void this.activateView());
     this.addCommand({ id: "open-wardrobe", name: "Open Meridian Wardrobe", callback: () => void this.activateView() });
@@ -1836,7 +2003,7 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
     this.registerEvent(this.app.vault.on("modify", (f) => this.onVaultChange(f.path)));
     this.registerEvent(this.app.vault.on("create", (f) => this.onVaultChange(f.path)));
     this.app.workspace.onLayoutReady(() => {
-      void Promise.all([this.clothing.load(), this.outfits.load(), this.wishlist.load(), this.trips.load(), this.catalog.load()]).then(() => this.migratePresentations()).then(() => this.refresh());
+      void Promise.all([this.clothing.load(), this.outfits.load(), this.wishlist.load(), this.trips.load(), this.catalog.load(), this.schedule.load()]).then(() => this.migratePresentations()).then(() => this.refresh());
     });
   }
   /** One-time migration: presentation went from a single value to a set (an item
@@ -1956,6 +2123,15 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
   }
   async setUnitRetired(itemId, unitId, retired) {
     await this.mutateUnit(itemId, unitId, (u) => ({ ...u, retired }));
+  }
+  async setUnitColor(itemId, unitId, color) {
+    await this.mutateUnit(itemId, unitId, (u) => ({ ...u, color }));
+  }
+  /** Prompt for a copy's colour (so identical multiples can be told apart). */
+  openUnitColor(itemId, unitId) {
+    var _a, _b;
+    const current = (_b = (_a = this.clothing.getAll().find((i) => i.id === itemId)) == null ? void 0 : _a.units.find((u) => u.id === unitId)) == null ? void 0 : _b.color;
+    new ColorPromptModal(this.app, current, (color) => void this.setUnitColor(itemId, unitId, color)).open();
   }
   async addUnit(itemId) {
     await this.mutateItem(itemId, (item) => ({ ...item, units: [...item.units, newUnit()] }));
@@ -2077,6 +2253,30 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
     await this.outfits.save();
     this.refresh();
   }
+  // ---- scheduling outfits ahead of time ----
+  /** Local ISO date (yyyy-mm-dd), `offsetDays` from today. */
+  isoDate(offsetDays = 0) {
+    const d = /* @__PURE__ */ new Date();
+    d.setDate(d.getDate() + offsetDays);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  openScheduleOutfit(outfitId) {
+    new DatePromptModal(this.app, this.isoDate(1), (date, note) => void this.scheduleOutfit(outfitId, date, note)).open();
+  }
+  async scheduleOutfit(outfitId, date, note) {
+    if (!date) return;
+    if (this.schedule.getAll().some((s) => s.date === date && s.outfitId === outfitId)) return;
+    const rec = { id: genId("sch"), date, outfitId, note, createdAt: Date.now(), order: this.schedule.getAll().length };
+    this.schedule.setAll([...this.schedule.getAll(), rec]);
+    await this.schedule.save();
+    this.refresh();
+  }
+  async unscheduleOutfit(scheduleId) {
+    this.schedule.setAll(this.schedule.getAll().filter((s) => s.id !== scheduleId));
+    await this.schedule.save();
+    this.refresh();
+  }
   // ---- wishlist ----
   openAddWishlist() {
     new WishlistModal(this.app, { onSubmit: (d) => void this.saveWish(d) }).open();
@@ -2108,9 +2308,9 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
   // ---- shopping-list integration ----
   async pushToShopping(entry) {
     const res = await addToShoppingList(this.app, this.settings.shoppingPath, this.settings.shoppingListName, entry);
-    if (res === "added") new import_obsidian33.Notice(`Added "${entry.name}" to your ${this.settings.shoppingListName} list.`);
-    else if (res === "busy") new import_obsidian33.Notice("The shopping list is syncing right now \u2014 try again in a moment.");
-    else new import_obsidian33.Notice("Couldn't write to the shopping list.");
+    if (res === "added") new import_obsidian34.Notice(`Added "${entry.name}" to your ${this.settings.shoppingListName} list.`);
+    else if (res === "busy") new import_obsidian34.Notice("The shopping list is syncing right now \u2014 try again in a moment.");
+    else new import_obsidian34.Notice("Couldn't write to the shopping list.");
   }
   /** Wishlist → shopping (keeps the wish; you may want more than one). */
   async wishToShopping(id) {
@@ -2241,6 +2441,10 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
       });
     } else if (this.catalog.isStorePath(path)) {
       void this.catalog.onExternalChange(path).then((changed) => {
+        if (changed) this.refresh();
+      });
+    } else if (this.schedule.isStorePath(path)) {
+      void this.schedule.onExternalChange(path).then((changed) => {
         if (changed) this.refresh();
       });
     }
