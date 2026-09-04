@@ -1,0 +1,429 @@
+/* Meridian Wardrobe — view styles. Kept minimal and theme-token based so it sits
+   naturally in any theme and inside the Meridian skin. */
+
+.mrw-view {
+	padding: 0.5rem 0.75rem 2rem;
+}
+.mrw-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-bottom: 0.75rem;
+}
+.mrw-header h2 {
+	margin: 0;
+}
+.mrw-empty,
+.mrw-warning {
+	padding: 1rem;
+	border-radius: 8px;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	text-align: center;
+}
+.mrw-warning {
+	color: var(--text-error);
+	text-align: left;
+}
+
+.mrw-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+.mrw-row {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.5rem 0.6rem;
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+.mrw-row.mrw-unavailable {
+	opacity: 0.6;
+}
+.mrw-row-main {
+	flex: 1;
+	min-width: 0;
+}
+.mrw-name {
+	font-weight: 600;
+}
+.mrw-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem;
+	margin-top: 0.2rem;
+}
+.mrw-badge {
+	font-size: 0.72em;
+	padding: 0.05rem 0.4rem;
+	border-radius: 999px;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+.mrw-pres-femme {
+	background: color-mix(in srgb, var(--color-pink, #d9639b) 25%, transparent);
+	color: var(--text-normal);
+}
+.mrw-pres-masc {
+	background: color-mix(in srgb, var(--color-blue, #4a7fd0) 25%, transparent);
+	color: var(--text-normal);
+}
+.mrw-pres-andro {
+	background: color-mix(in srgb, var(--color-purple, #9a6fd0) 25%, transparent);
+	color: var(--text-normal);
+}
+.mrw-status {
+	flex: 0 0 auto;
+	font-size: 0.8em;
+}
+.mrw-ok {
+	color: var(--text-success, #3aa76d);
+}
+.mrw-out {
+	color: var(--text-error, #c0503f);
+}
+.mrw-icon-btn {
+	flex: 0 0 auto;
+	background: transparent;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 0.2rem;
+	border-radius: 6px;
+}
+.mrw-icon-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+.mrw-icon-btn.is-disabled {
+	opacity: 0.35;
+	cursor: default;
+}
+.mrw-chevron:hover {
+	color: var(--text-accent);
+}
+
+/* filter bar */
+.mrw-filters {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+	margin-bottom: 0.6rem;
+}
+.mrw-search {
+	width: 100%;
+}
+.mrw-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem;
+}
+.mrw-selects {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem;
+}
+.mrw-selects .dropdown {
+	flex: 1 1 auto;
+	min-width: 8rem;
+}
+.mrw-toggles {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3rem;
+}
+.mrw-chip {
+	font-size: 0.78em;
+	padding: 0.15rem 0.6rem;
+	border-radius: 999px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.mrw-chip:hover {
+	background: var(--background-modifier-hover);
+}
+.mrw-chip.is-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+.mrw-chip.mrw-clear {
+	border-style: dashed;
+}
+.mrw-count {
+	font-size: 0.78em;
+	color: var(--text-faint);
+	margin: 0.2rem 0 0.4rem;
+}
+
+/* rows */
+.mrw-row {
+	flex-direction: column;
+	align-items: stretch;
+	gap: 0;
+}
+.mrw-row-top {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.mrw-name {
+	cursor: pointer;
+}
+.mrw-name:hover {
+	text-decoration: underline;
+}
+.mrw-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.15rem;
+	flex: 0 0 auto;
+}
+.mrw-badge.mrw-warn {
+	background: color-mix(in srgb, var(--color-orange, #d99a41) 30%, transparent);
+	color: var(--text-normal);
+}
+.mrw-badge.mrw-bad {
+	background: color-mix(in srgb, var(--color-red, #c0503f) 30%, transparent);
+	color: var(--text-normal);
+}
+
+/* units */
+.mrw-units {
+	margin-top: 0.5rem;
+	padding-top: 0.4rem;
+	border-top: 1px solid var(--background-modifier-border);
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+}
+.mrw-unit {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.mrw-unit.mrw-retired {
+	opacity: 0.5;
+}
+.mrw-unit-n {
+	font-size: 0.75em;
+	color: var(--text-faint);
+	width: 2rem;
+	flex: 0 0 auto;
+}
+.mrw-unit-state {
+	flex: 1;
+	font-size: 0.82em;
+}
+.mrw-unit-actions {
+	display: flex;
+	gap: 0.1rem;
+	flex: 0 0 auto;
+}
+.mrw-linkbtn {
+	background: transparent;
+	border: none;
+	color: var(--text-accent);
+	cursor: pointer;
+	font-size: 0.82em;
+	padding: 0.1rem 0;
+}
+
+/* tabs */
+.mrw-tabs {
+	display: flex;
+	gap: 0.25rem;
+	margin-bottom: 0.6rem;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+.mrw-tab {
+	background: transparent;
+	border: none;
+	border-bottom: 2px solid transparent;
+	color: var(--text-muted);
+	padding: 0.35rem 0.75rem;
+	cursor: pointer;
+	font-weight: 600;
+}
+.mrw-tab:hover {
+	color: var(--text-normal);
+}
+.mrw-tab.is-active {
+	color: var(--text-accent);
+	border-bottom-color: var(--interactive-accent);
+}
+
+/* outfit status */
+.mrw-status.mrw-alt {
+	color: var(--color-orange, #d99a41);
+	font-weight: 600;
+}
+.mrw-outfit .mrw-slot-lines {
+	margin-top: 0.4rem;
+	padding-top: 0.35rem;
+	border-top: 1px solid var(--background-modifier-border);
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+}
+.mrw-slot-line-view {
+	display: flex;
+	gap: 0.5rem;
+	align-items: baseline;
+	font-size: 0.85em;
+}
+.mrw-slot-role {
+	flex: 0 0 30%;
+	color: var(--text-muted);
+}
+.mrw-slot-fill {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 0.35rem;
+}
+.mrw-alt-badge {
+	background: color-mix(in srgb, var(--color-orange, #d99a41) 35%, transparent);
+	color: var(--text-normal);
+}
+.mrw-missing {
+	margin-top: 0.3rem;
+	font-size: 0.8em;
+	color: var(--text-error);
+}
+
+/* outfit modal slot editor */
+.mrw-slots {
+	display: flex;
+	flex-direction: column;
+	gap: 0.6rem;
+	margin: 0.4rem 0;
+}
+.mrw-slot {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	padding: 0.5rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+}
+.mrw-slot-head {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.mrw-slot-label {
+	flex: 1;
+}
+.mrw-slot-opt {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+	font-size: 0.8em;
+	color: var(--text-muted);
+}
+.mrw-slot-line {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+.mrw-slot-tag {
+	flex: 0 0 5.5rem;
+	font-size: 0.8em;
+	color: var(--text-muted);
+}
+.mrw-slot-line .dropdown {
+	flex: 1;
+	min-width: 10rem;
+}
+.mrw-alt-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+.mrw-chip-x {
+	cursor: pointer;
+	opacity: 0.7;
+}
+.mrw-chip-x:hover {
+	opacity: 1;
+}
+
+/* wishlist */
+.mrw-section-h {
+	margin: 0.8rem 0 0.4rem;
+	color: var(--text-muted);
+}
+.mrw-wish-note {
+	font-size: 0.82em;
+	color: var(--text-muted);
+	margin-top: 0.2rem;
+}
+
+/* trips */
+.mrw-empty.mrw-slim {
+	padding: 0.5rem;
+	font-size: 0.85em;
+}
+.mrw-trip-head {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0.3rem 0 0.2rem;
+}
+.mrw-trip-head h3 {
+	margin: 0;
+	flex: 1;
+}
+.mrw-trip-add-outfit {
+	margin-top: 0.4rem;
+	width: 100%;
+}
+.mrw-pack-cat {
+	margin-bottom: 0.6rem;
+}
+.mrw-pack-cat-h {
+	font-size: 0.75em;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--text-faint);
+	margin: 0.3rem 0 0.15rem;
+}
+.mrw-pack-line {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.25rem 0.3rem;
+	border-radius: 6px;
+	cursor: pointer;
+}
+.mrw-pack-line:hover {
+	background: var(--background-modifier-hover);
+}
+.mrw-pack-name {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+.mrw-pack-name.mrw-packed {
+	text-decoration: line-through;
+	color: var(--text-faint);
+}
+.mrw-pack-add {
+	margin-top: 0.5rem;
+	position: relative;
+}
+.mrw-suggest {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+	margin-top: 0.3rem;
+}

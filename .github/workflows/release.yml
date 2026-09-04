@@ -1,0 +1,28 @@
+name: Release plugin
+on:
+  push:
+    paths:
+      - manifest.json
+      - main.js
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish release from manifest version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="$(jq -r .version manifest.json)"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then echo "no version in manifest"; exit 1; fi
+          ASSETS="main.js manifest.json"
+          [ -f styles.css ] && ASSETS="$ASSETS styles.css"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" $ASSETS --clobber
+          else
+            gh release create "$VERSION" $ASSETS --title "$VERSION" \
+              --notes "BRAT distribution release $VERSION. Built from the obsidian_workspace.obs monorepo."
+          fi
