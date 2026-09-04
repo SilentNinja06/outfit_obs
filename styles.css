@@ -398,6 +398,50 @@
 .mrw-chip-x:hover {
 	opacity: 1;
 }
+.mrw-pick-btn {
+	flex: 1;
+	min-width: 10rem;
+	text-align: left;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 6px);
+	padding: 0.35rem 0.5rem;
+	cursor: pointer;
+	color: var(--text-normal);
+}
+.mrw-pick-btn:hover {
+	background: var(--background-modifier-hover);
+}
+.mrw-slot-hint {
+	font-size: 0.8em;
+	color: var(--text-muted);
+	margin: 0.2rem 0;
+}
+.mrw-slot-crit .mrw-chips {
+	flex: 1;
+}
+
+/* searchable item picker */
+.mrw-picker .mrw-search {
+	width: 100%;
+	margin-bottom: 0.5rem;
+}
+.mrw-picker-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	max-height: 55vh;
+	overflow-y: auto;
+}
+.mrw-picker-row {
+	padding: 0.4rem 0.5rem;
+	border-radius: 8px;
+	background: var(--background-secondary);
+	cursor: pointer;
+}
+.mrw-picker-row:hover {
+	background: var(--background-modifier-hover);
+}
 
 /* wishlist */
 .mrw-section-h {
