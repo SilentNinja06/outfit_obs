@@ -798,6 +798,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     else if (this.tab === "outfits") this.renderOutfits(body);
     else if (this.tab === "wishlist") this.renderWishlist(body);
     else this.renderTrips(body);
+    root.createDiv({ cls: "mrw-scroll-spacer" });
   }
   // ======================================================= CLOTHING TAB
   renderClothing(root) {

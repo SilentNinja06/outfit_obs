@@ -2,9 +2,16 @@
    naturally in any theme and inside the Meridian skin. */
 
 .mrw-view {
-	/* Generous, safe-area-aware bottom padding so the last row clears the mobile
-	   navigation toolbar (and the home-indicator inset) when scrolled to the end. */
-	padding: 0.5rem 0.75rem calc(6rem + env(safe-area-inset-bottom, 0px));
+	padding: 0.5rem 0.75rem 1rem;
+}
+/* A real spacer below the content — mobile webviews (iOS) ignore padding-bottom on
+   a scroll container, so a sized element is what actually lifts the last row clear
+   of the floating navigation toolbar and the home-indicator inset. */
+.mrw-scroll-spacer {
+	height: calc(6rem + env(safe-area-inset-bottom, 0px));
+	min-height: calc(6rem + env(safe-area-inset-bottom, 0px));
+	flex: 0 0 auto;
+	pointer-events: none;
 }
 .mrw-header {
 	display: flex;
