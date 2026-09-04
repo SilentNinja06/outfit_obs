@@ -352,6 +352,14 @@ var import_obsidian24 = require("obsidian");
 var import_obsidian25 = require("obsidian");
 
 // ../../packages/wardrobe-core/src/model.ts
+var PRESENTATION_VALUES = ["masc", "andro", "femme"];
+function normalizePresentations(raw) {
+  const src = raw;
+  const list = Array.isArray(src == null ? void 0 : src.presentations) ? src.presentations : (src == null ? void 0 : src.presentation) != null ? [src.presentation] : [];
+  const out = [];
+  for (const v of list) if ((v === "masc" || v === "andro" || v === "femme") && !out.includes(v)) out.push(v);
+  return out;
+}
 var FORMALITY_LABELS = ["Loungewear", "Casual", "Smart casual", "Business", "Formal", "Black tie"];
 var GARMENT_TYPES = [
   "top",
@@ -503,7 +511,7 @@ function matchesFilter(item, f) {
   const allRetired = item.units.length > 0 && item.units.every((u) => u.retired);
   if (allRetired && !f.includeRetired) return false;
   if (f.text && !item.name.toLowerCase().includes(f.text.trim().toLowerCase())) return false;
-  if (!anyOf(f.presentations, (p) => p === item.presentation)) return false;
+  if (!anyOf(f.presentations, (p) => item.presentations.includes(p))) return false;
   if (!anyOf(f.types, (t) => t === item.type)) return false;
   if (!anyOf(f.tags, (t) => item.tags.includes(t))) return false;
   if (typeof f.formalityMin === "number" && item.formality < f.formalityMin) return false;
@@ -574,7 +582,10 @@ function matchesOutfitFilter(outfit, f, isItemAvailable) {
   var _a, _b;
   if (outfit.retired && !f.includeRetired) return false;
   if (f.text && !outfit.name.toLowerCase().includes(f.text.trim().toLowerCase())) return false;
-  if (!anyOf2(f.presentations, (p) => p === outfit.presentation)) return false;
+  if (!anyOf2(f.presentations, (p) => {
+    var _a2;
+    return ((_a2 = outfit.presentations) != null ? _a2 : []).includes(p);
+  })) return false;
   if (!anyOf2(f.tags, (t) => outfit.tags.includes(t))) return false;
   if (typeof f.formalityMin === "number" && ((_a = outfit.formality) != null ? _a : 0) < f.formalityMin) return false;
   if (typeof f.formalityMax === "number" && ((_b = outfit.formality) != null ? _b : 5) > f.formalityMax) return false;
@@ -886,7 +897,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     nameEl.onclick = () => this.plugin.editItem(item);
     const meta = main.createDiv({ cls: "mrw-meta" });
     meta.createSpan({ cls: "mrw-badge", text: item.type });
-    meta.createSpan({ cls: `mrw-badge mrw-pres-${item.presentation}`, text: item.presentation });
+    for (const p of item.presentations) meta.createSpan({ cls: `mrw-badge mrw-pres-${p}`, text: p });
     meta.createSpan({ cls: "mrw-badge", text: (_a = FORMALITY_LABELS[item.formality]) != null ? _a : String(item.formality) });
     for (const tag of item.tags) meta.createSpan({ cls: "mrw-badge mrw-tag", text: tag });
     if (st.damaged) meta.createSpan({ cls: "mrw-badge mrw-warn", text: `${st.damaged} damaged` });
@@ -1048,7 +1059,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     for (const outfit of shown) this.renderOutfit(list, outfit, isAvail, nameById);
   }
   renderOutfit(list, outfit, isAvail, nameById) {
-    var _a;
+    var _a, _b;
     const av = resolveOutfit(outfit, isAvail);
     const row = list.createDiv({ cls: "mrw-row mrw-outfit" });
     if (!av.available) row.addClass("mrw-unavailable");
@@ -1057,7 +1068,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     const nameEl = main.createSpan({ cls: "mrw-name", text: outfit.name });
     nameEl.onclick = () => this.plugin.editOutfit(outfit);
     const meta = main.createDiv({ cls: "mrw-meta" });
-    if (outfit.presentation) meta.createSpan({ cls: `mrw-badge mrw-pres-${outfit.presentation}`, text: outfit.presentation });
+    for (const p of (_a = outfit.presentations) != null ? _a : []) meta.createSpan({ cls: `mrw-badge mrw-pres-${p}`, text: p });
     if (outfit.formality != null) meta.createSpan({ cls: "mrw-badge", text: FORMALITY_LABELS[outfit.formality] });
     for (const tag of outfit.tags) meta.createSpan({ cls: "mrw-badge mrw-tag", text: tag });
     const actions = top.createDiv({ cls: "mrw-actions" });
@@ -1079,7 +1090,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
       const line = slots.createDiv({ cls: "mrw-slot-line-view" });
       line.createSpan({ cls: "mrw-slot-role", text: s.label + (s.optional ? " (optional)" : "") });
       if (s.chosenItemId) {
-        const chosenName = (_a = nameById.get(s.chosenItemId)) != null ? _a : s.chosenItemId;
+        const chosenName = (_b = nameById.get(s.chosenItemId)) != null ? _b : s.chosenItemId;
         const nameSpan = line.createSpan({ cls: "mrw-slot-fill", text: chosenName });
         if (s.usedAlternative) nameSpan.createSpan({ cls: "mrw-badge mrw-alt-badge", text: "alternative" });
       } else {
@@ -1118,7 +1129,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
         main.createSpan({ cls: "mrw-name", text: item.name });
         const meta = main.createDiv({ cls: "mrw-meta" });
         meta.createSpan({ cls: "mrw-badge", text: item.type });
-        meta.createSpan({ cls: `mrw-badge mrw-pres-${item.presentation}`, text: item.presentation });
+        for (const p of item.presentations) meta.createSpan({ cls: `mrw-badge mrw-pres-${p}`, text: p });
         const actions = top.createDiv({ cls: "mrw-actions" });
         const replace = actions.createEl("button", { cls: "mrw-chip", text: "Replace" });
         replace.onclick = () => void this.plugin.itemToShopping(item.id);
@@ -1136,6 +1147,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     for (const w of wishes) this.renderWish(list, w);
   }
   renderWish(list, w) {
+    var _a;
     const row = list.createDiv({ cls: "mrw-row" });
     const top = row.createDiv({ cls: "mrw-row-top" });
     const main = top.createDiv({ cls: "mrw-row-main" });
@@ -1143,7 +1155,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
     nameEl.onclick = () => this.plugin.editWish(w);
     const meta = main.createDiv({ cls: "mrw-meta" });
     meta.createSpan({ cls: "mrw-badge", text: w.type });
-    if (w.presentation) meta.createSpan({ cls: `mrw-badge mrw-pres-${w.presentation}`, text: w.presentation });
+    for (const p of (_a = w.presentations) != null ? _a : []) meta.createSpan({ cls: `mrw-badge mrw-pres-${p}`, text: p });
     if (w.note) main.createDiv({ cls: "mrw-wish-note", text: w.note });
     const actions = top.createDiv({ cls: "mrw-actions" });
     this.iconBtn(actions, "shopping-cart", "Add to shopping list", () => void this.plugin.wishToShopping(w.id));
@@ -1319,13 +1331,14 @@ function itemFilterActive(f) {
 
 // src/itemmodal.ts
 var import_obsidian28 = require("obsidian");
+var PRES_LABEL = { masc: "Masc", andro: "Andro", femme: "Femme" };
 function draftFrom(item) {
-  var _a, _b, _c, _d;
+  var _a, _b, _c;
   return {
     name: (_a = item == null ? void 0 : item.name) != null ? _a : "",
     type: (_b = item == null ? void 0 : item.type) != null ? _b : "top",
-    presentation: (_c = item == null ? void 0 : item.presentation) != null ? _c : "andro",
-    formality: (_d = item == null ? void 0 : item.formality) != null ? _d : 1,
+    presentations: item ? normalizePresentations(item).length ? normalizePresentations(item) : ["andro"] : ["andro"],
+    formality: (_c = item == null ? void 0 : item.formality) != null ? _c : 1,
     tags: item ? [...item.tags] : [],
     wearLimit: item == null ? void 0 : item.wearLimit,
     acquiredDate: item == null ? void 0 : item.acquiredDate,
@@ -1353,12 +1366,22 @@ var ItemEditModal = class extends import_obsidian28.Modal {
       for (const g of GARMENT_TYPES) d.addOption(g, g[0].toUpperCase() + g.slice(1));
       d.setValue(this.draft.type).onChange((v) => this.draft.type = v);
     });
-    new import_obsidian28.Setting(contentEl).setName("Presentation").addDropdown((d) => {
-      d.addOption("masc", "Masc-presenting");
-      d.addOption("andro", "Androgynous");
-      d.addOption("femme", "Femme-presenting");
-      d.setValue(this.draft.presentation).onChange((v) => this.draft.presentation = v);
-    });
+    const presSetting = new import_obsidian28.Setting(contentEl).setName("Presentation").setDesc("How it reads \u2014 pick any that apply.");
+    const chips = presSetting.controlEl.createDiv({ cls: "mrw-chips" });
+    const renderChips = () => {
+      chips.empty();
+      for (const p of PRESENTATION_VALUES) {
+        const active = this.draft.presentations.includes(p);
+        const b = chips.createEl("button", { cls: `mrw-chip mrw-pres-${p}` + (active ? " is-active" : ""), text: PRES_LABEL[p] });
+        b.onclick = () => {
+          const i = this.draft.presentations.indexOf(p);
+          if (i >= 0) this.draft.presentations.splice(i, 1);
+          else this.draft.presentations.push(p);
+          renderChips();
+        };
+      }
+    };
+    renderChips();
     new import_obsidian28.Setting(contentEl).setName("Formality").addDropdown((d) => {
       FORMALITY_LABELS.forEach((label, i) => d.addOption(String(i), label));
       d.setValue(String(this.draft.formality)).onChange((v) => this.draft.formality = Number(v));
@@ -1412,12 +1435,13 @@ var ItemEditModal = class extends import_obsidian28.Modal {
 
 // src/outfitmodal.ts
 var import_obsidian29 = require("obsidian");
+var PRES_LABEL2 = { masc: "Masc", andro: "Andro", femme: "Femme" };
 function draftFrom2(outfit) {
   var _a;
   return {
     name: (_a = outfit == null ? void 0 : outfit.name) != null ? _a : "",
     slots: outfit ? outfit.slots.map((s) => ({ label: s.label, primaryItemId: s.primaryItemId, alternativeItemIds: [...s.alternativeItemIds], optional: s.optional })) : [{ label: "Top", primaryItemId: "", alternativeItemIds: [] }],
-    presentation: outfit == null ? void 0 : outfit.presentation,
+    presentations: (outfit == null ? void 0 : outfit.presentations) ? [...outfit.presentations] : [],
     formality: outfit == null ? void 0 : outfit.formality,
     tags: outfit ? [...outfit.tags] : []
   };
@@ -1446,14 +1470,22 @@ var OutfitEditModal = class extends import_obsidian29.Modal {
       t.setPlaceholder("e.g. Symphony black").setValue(this.draft.name).onChange((v) => this.draft.name = v.trim());
       if (!this.editing) t.inputEl.focus();
     });
-    new import_obsidian29.Setting(contentEl).setName("Presentation").addDropdown((d) => {
-      var _a;
-      d.addOption("", "\u2014 any \u2014");
-      d.addOption("masc", "Masc-presenting");
-      d.addOption("andro", "Androgynous");
-      d.addOption("femme", "Femme-presenting");
-      d.setValue((_a = this.draft.presentation) != null ? _a : "").onChange((v) => this.draft.presentation = v || void 0);
-    });
+    const presSetting = new import_obsidian29.Setting(contentEl).setName("Presentation").setDesc("Optional \u2014 pick any that apply.");
+    const presChips = presSetting.controlEl.createDiv({ cls: "mrw-chips" });
+    const renderPresChips = () => {
+      presChips.empty();
+      for (const p of PRESENTATION_VALUES) {
+        const active = this.draft.presentations.includes(p);
+        const b = presChips.createEl("button", { cls: `mrw-chip mrw-pres-${p}` + (active ? " is-active" : ""), text: PRES_LABEL2[p] });
+        b.onclick = () => {
+          const i = this.draft.presentations.indexOf(p);
+          if (i >= 0) this.draft.presentations.splice(i, 1);
+          else this.draft.presentations.push(p);
+          renderPresChips();
+        };
+      }
+    };
+    renderPresChips();
     new import_obsidian29.Setting(contentEl).setName("Formality").addDropdown((d) => {
       d.addOption("", "\u2014 any \u2014");
       FORMALITY_LABELS.forEach((label, i) => d.addOption(String(i), label));
@@ -1552,6 +1584,7 @@ var OutfitEditModal = class extends import_obsidian29.Modal {
 
 // src/wishlistmodal.ts
 var import_obsidian30 = require("obsidian");
+var PRES_LABEL3 = { masc: "Masc", andro: "Andro", femme: "Femme" };
 var WishlistModal = class extends import_obsidian30.Modal {
   constructor(app, opts) {
     var _a, _b, _c, _d, _e, _f;
@@ -1560,7 +1593,7 @@ var WishlistModal = class extends import_obsidian30.Modal {
     this.draft = {
       name: (_b = (_a = opts.existing) == null ? void 0 : _a.name) != null ? _b : "",
       type: (_d = (_c = opts.existing) == null ? void 0 : _c.type) != null ? _d : "top",
-      presentation: (_e = opts.existing) == null ? void 0 : _e.presentation,
+      presentations: ((_e = opts.existing) == null ? void 0 : _e.presentations) ? [...opts.existing.presentations] : [],
       note: (_f = opts.existing) == null ? void 0 : _f.note
     };
   }
@@ -1576,14 +1609,22 @@ var WishlistModal = class extends import_obsidian30.Modal {
       for (const g of GARMENT_TYPES) d.addOption(g, g[0].toUpperCase() + g.slice(1));
       d.setValue(this.draft.type).onChange((v) => this.draft.type = v);
     });
-    new import_obsidian30.Setting(contentEl).setName("Presentation").addDropdown((d) => {
-      var _a;
-      d.addOption("", "\u2014 any \u2014");
-      d.addOption("masc", "Masc-presenting");
-      d.addOption("andro", "Androgynous");
-      d.addOption("femme", "Femme-presenting");
-      d.setValue((_a = this.draft.presentation) != null ? _a : "").onChange((v) => this.draft.presentation = v || void 0);
-    });
+    const presSetting = new import_obsidian30.Setting(contentEl).setName("Presentation").setDesc("Optional \u2014 pick any that apply.");
+    const presChips = presSetting.controlEl.createDiv({ cls: "mrw-chips" });
+    const renderPresChips = () => {
+      presChips.empty();
+      for (const p of PRESENTATION_VALUES) {
+        const active = this.draft.presentations.includes(p);
+        const b = presChips.createEl("button", { cls: `mrw-chip mrw-pres-${p}` + (active ? " is-active" : ""), text: PRES_LABEL3[p] });
+        b.onclick = () => {
+          const i = this.draft.presentations.indexOf(p);
+          if (i >= 0) this.draft.presentations.splice(i, 1);
+          else this.draft.presentations.push(p);
+          renderPresChips();
+        };
+      }
+    };
+    renderPresChips();
     new import_obsidian30.Setting(contentEl).setName("Note").addTextArea((t) => {
       var _a;
       t.setValue((_a = this.draft.note) != null ? _a : "").onChange((v) => this.draft.note = v.trim() || void 0);
@@ -1795,8 +1836,49 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
     this.registerEvent(this.app.vault.on("modify", (f) => this.onVaultChange(f.path)));
     this.registerEvent(this.app.vault.on("create", (f) => this.onVaultChange(f.path)));
     this.app.workspace.onLayoutReady(() => {
-      void Promise.all([this.clothing.load(), this.outfits.load(), this.wishlist.load(), this.trips.load(), this.catalog.load()]).then(() => this.refresh());
+      void Promise.all([this.clothing.load(), this.outfits.load(), this.wishlist.load(), this.trips.load(), this.catalog.load()]).then(() => this.migratePresentations()).then(() => this.refresh());
     });
+  }
+  /** One-time migration: presentation went from a single value to a set (an item
+   * can read more than one way). Convert any legacy single `presentation` field to
+   * the `presentations` array and drop the old key, rewriting only when something
+   * actually changed (so it's a no-op on already-migrated, sync-safe files). */
+  async migratePresentations() {
+    let cChanged = false;
+    const clothing = this.clothing.getAll().map((it) => {
+      const a = it;
+      if (Array.isArray(a.presentations) && !("presentation" in a)) return it;
+      cChanged = true;
+      const pres = normalizePresentations(a);
+      const { presentation: _legacy, ...rest } = a;
+      return { ...rest, presentations: pres.length ? pres : ["andro"] };
+    });
+    if (cChanged) {
+      this.clothing.setAll(clothing);
+      await this.clothing.save();
+    }
+    const migrateOptional = (records) => {
+      let changed = false;
+      const next = records.map((r) => {
+        const a = r;
+        if (!("presentation" in a)) return r;
+        changed = true;
+        const pres = normalizePresentations(a);
+        const { presentation: _legacy, ...rest } = a;
+        return pres.length ? { ...rest, presentations: pres } : rest;
+      });
+      return { records: next, changed };
+    };
+    const o = migrateOptional(this.outfits.getAll());
+    if (o.changed) {
+      this.outfits.setAll(o.records);
+      await this.outfits.save();
+    }
+    const w = migrateOptional(this.wishlist.getAll());
+    if (w.changed) {
+      this.wishlist.setAll(w.records);
+      await this.wishlist.save();
+    }
   }
   /** Ids of clothing items with at least one currently-wearable unit. Computed
    * fresh so outfit availability always reflects the live laundry state. */
@@ -1822,7 +1904,7 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
       id: genId("i"),
       name: draft.name,
       type: draft.type,
-      presentation: draft.presentation,
+      presentations: draft.presentations,
       formality: draft.formality,
       tags: draft.tags,
       wearLimit: draft.wearLimit,
@@ -1842,7 +1924,7 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
       ...item,
       name: draft.name,
       type: draft.type,
-      presentation: draft.presentation,
+      presentations: draft.presentations,
       formality: draft.formality,
       tags: draft.tags,
       wearLimit: draft.wearLimit,
@@ -1924,7 +2006,7 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
       id: genId("o"),
       name: draft.name,
       slots: draft.slots.map((s) => ({ id: genId("s"), label: s.label, primaryItemId: s.primaryItemId, alternativeItemIds: s.alternativeItemIds, optional: s.optional })),
-      presentation: draft.presentation,
+      presentations: draft.presentations,
       formality: draft.formality,
       tags: draft.tags,
       retired: false,
@@ -1939,7 +2021,7 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
     await this.mutateOutfit(id, (o) => ({
       ...o,
       name: draft.name,
-      presentation: draft.presentation,
+      presentations: draft.presentations,
       formality: draft.formality,
       tags: draft.tags,
       // Preserve slot ids where a slot maps 1:1, else mint new ones.
@@ -2005,7 +2087,7 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
   async saveWish(draft, id) {
     if (id) {
       let changed = false;
-      const next = this.wishlist.getAll().map((w) => w.id === id ? (changed = true, { ...w, name: draft.name, type: draft.type, presentation: draft.presentation, note: draft.note }) : w);
+      const next = this.wishlist.getAll().map((w) => w.id === id ? (changed = true, { ...w, name: draft.name, type: draft.type, presentations: draft.presentations, note: draft.note }) : w);
       if (changed) {
         this.wishlist.setAll(next);
         await this.wishlist.save();
@@ -2013,7 +2095,7 @@ var MeridianWardrobePlugin = class extends import_obsidian33.Plugin {
       }
       return;
     }
-    const item = { id: genId("wish"), name: draft.name, type: draft.type, presentation: draft.presentation, note: draft.note, createdAt: Date.now(), order: this.wishlist.getAll().length };
+    const item = { id: genId("wish"), name: draft.name, type: draft.type, presentations: draft.presentations, note: draft.note, createdAt: Date.now(), order: this.wishlist.getAll().length };
     this.wishlist.setAll([...this.wishlist.getAll(), item]);
     await this.wishlist.save();
     this.refresh();
