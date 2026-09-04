@@ -171,6 +171,40 @@
 	margin: 0.2rem 0 0.4rem;
 }
 
+/* collapsible groups */
+.mrw-group-head {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.35rem 0.2rem;
+	margin-top: 0.4rem;
+	cursor: pointer;
+	border-bottom: 1px solid var(--background-modifier-border);
+	position: sticky;
+	top: 0;
+	background: var(--background-primary);
+	z-index: 1;
+}
+.mrw-group-head:hover {
+	color: var(--text-accent);
+}
+.mrw-group-chevron {
+	display: inline-flex;
+	color: var(--text-muted);
+}
+.mrw-group-name {
+	font-weight: 600;
+	flex: 1;
+	text-transform: capitalize;
+}
+.mrw-group-count {
+	font-size: 0.78em;
+	color: var(--text-faint);
+	background: var(--background-secondary);
+	border-radius: 999px;
+	padding: 0.05rem 0.5rem;
+}
+
 /* rows */
 .mrw-row {
 	flex-direction: column;
