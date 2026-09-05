@@ -453,6 +453,46 @@
 	background: var(--background-modifier-hover);
 }
 
+/* wear-confirmation sheet */
+.mrw-wear .mrw-sub {
+	color: var(--text-muted);
+	font-size: 0.85em;
+	margin: 0 0 0.6rem;
+}
+.mrw-wear-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	max-height: 60vh;
+	overflow-y: auto;
+}
+.mrw-wear-row {
+	padding: 0.5rem;
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+.mrw-wear-row.mrw-off {
+	opacity: 0.5;
+}
+.mrw-wear-head {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.4rem;
+}
+.mrw-wear-label {
+	font-weight: 600;
+}
+.mrw-wear-controls {
+	display: flex;
+	gap: 0.4rem;
+	flex-wrap: wrap;
+}
+.mrw-wear-controls .dropdown {
+	flex: 1 1 45%;
+	min-width: 7rem;
+}
+
 /* wishlist */
 .mrw-section-h {
 	margin: 0.8rem 0 0.4rem;

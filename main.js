@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => MeridianWardrobePlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian35 = require("obsidian");
+var import_obsidian36 = require("obsidian");
 
 // ../../packages/core/dist/settings/framework.js
 function mergeSettings(defaults, loaded) {
@@ -502,6 +502,17 @@ function resolveOutfit(outfit, ctx) {
     if (!optional) missingSlotLabels.push(slot.label);
   }
   return { available: missingSlotLabels.length === 0, usesAlternatives, slots, missingSlotLabels };
+}
+function outfitHasChoices(outfit, items) {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  for (const slot of outfit.slots) {
+    if (slot.optional) return true;
+    if (isFlexibleSlot(slot)) return true;
+    if (slot.alternativeItemIds.length > 0) return true;
+    const primary = slot.primaryItemId ? byId.get(slot.primaryItemId) : void 0;
+    if (primary && availableColors(primary).length > 1) return true;
+  }
+  return false;
 }
 var DEFAULT_TOILETRIES = ["Toothbrush", "Toothpaste", "Shaver", "Deodorant", "Shampoo", "Hairbrush"];
 function packingLineKey(item) {
@@ -1079,6 +1090,9 @@ var WardrobeView = class extends import_obsidian27.ItemView {
       this.iconBtn(actions, "washing-machine", "To laundry", () => void this.plugin.sendAllToLaundry(item.id));
       this.iconBtn(actions, "check-check", "Laundered (clean)", () => void this.plugin.launderAll(item.id));
     } else {
+      if (st.dirty + st.inLaundry > 0) {
+        this.iconBtn(actions, "check-check", "Mark all copies clean", () => void this.plugin.launderAll(item.id));
+      }
       const chevron = this.iconBtn(actions, this.expanded.has(item.id) ? "chevron-down" : "chevron-right", "Copies", () => {
         this.expanded.has(item.id) ? this.expanded.delete(item.id) : this.expanded.add(item.id);
         this.render();
@@ -1128,6 +1142,10 @@ var WardrobeView = class extends import_obsidian27.ItemView {
       menu.addItem((i) => i.setTitle(u.condition === "damaged" ? "Clear damaged" : "Mark damaged").setIcon("alert-triangle").onClick(() => void this.plugin.setUnitCondition(item.id, u.id, u.condition === "damaged" ? "ok" : "damaged")));
       menu.addItem((i) => i.setTitle(u.condition === "needs-replacement" ? "Clear needs-replacement" : "Needs replacement").setIcon("circle-x").onClick(() => void this.plugin.setUnitCondition(item.id, u.id, u.condition === "needs-replacement" ? "ok" : "needs-replacement")));
       menu.addItem((i) => i.setTitle(u.color ? `Colour: ${u.color}` : "Set colour\u2026").setIcon("palette").onClick(() => this.plugin.openUnitColor(item.id, u.id)));
+    } else {
+      menu.addSeparator();
+      menu.addItem((i) => i.setTitle("Send all copies to laundry").setIcon("washing-machine").onClick(() => void this.plugin.sendAllToLaundry(item.id)));
+      menu.addItem((i) => i.setTitle("Mark all copies clean").setIcon("check-check").onClick(() => void this.plugin.launderAll(item.id)));
     }
     menu.addSeparator();
     menu.addItem((i) => i.setTitle("Add another copy").setIcon("copy-plus").onClick(() => void this.plugin.addUnit(item.id)));
@@ -2308,8 +2326,122 @@ var TripEditModal = class extends import_obsidian34.Modal {
   }
 };
 
+// src/wearmodal.ts
+var import_obsidian35 = require("obsidian");
+var WearOutfitModal = class extends import_obsidian35.Modal {
+  constructor(appRef, opts) {
+    super(appRef);
+    this.opts = opts;
+    this.choices = [];
+  }
+  onOpen() {
+    var _a, _b, _c;
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("mrw-wear");
+    attachKeyboardDismiss(contentEl);
+    const { outfit, items, typeLimits } = this.opts;
+    contentEl.createEl("h3", { text: `Wear \u201C${outfit.name}\u201D` });
+    contentEl.createEl("p", { cls: "mrw-sub", text: "Pick what you actually wore. Untick a slot to leave it out." });
+    const resolved = resolveOutfit(outfit, { items, typeLimits });
+    const chosenBySlot = new Map(resolved.slots.map((s) => [s.slotId, s]));
+    const isAvail = (i) => itemAvailability(i, typeLimits).available;
+    for (const slot of outfit.slots) {
+      const candidates = this.candidatesFor(slot).sort((a, b) => Number(isAvail(b)) - Number(isAvail(a)) || a.name.localeCompare(b.name));
+      const res = chosenBySlot.get(slot.id);
+      const itemId = (_a = res == null ? void 0 : res.chosenItemId) != null ? _a : "";
+      this.choices.push({ slot, candidates, itemId, color: (_c = (_b = res == null ? void 0 : res.chosenColor) != null ? _b : slot.color) != null ? _c : "", worn: !!itemId });
+    }
+    const list = contentEl.createDiv({ cls: "mrw-wear-list" });
+    for (const c of this.choices) this.renderRow(list, c, isAvail);
+    new import_obsidian35.Setting(contentEl).addButton((b) => b.setButtonText("Cancel").onClick(() => this.close())).addButton(
+      (b) => b.setButtonText("Log wear").setCta().onClick(() => {
+        const picks = this.choices.filter((c) => c.worn && c.itemId).map((c) => ({ itemId: c.itemId, color: c.color || void 0 }));
+        this.opts.onConfirm(picks);
+        this.close();
+      })
+    );
+  }
+  /** Items that may fill a slot: a flexible slot's matching items, or a specific
+   * slot's primary plus its listed alternatives (existing items only). */
+  candidatesFor(slot) {
+    const byId = new Map(this.opts.items.map((i) => [i.id, i]));
+    if (isFlexibleSlot(slot)) return this.opts.items.filter((i) => itemMatchesCriteria(i, slot.match));
+    const ids = [slot.primaryItemId, ...slot.alternativeItemIds].filter(Boolean);
+    const seen = /* @__PURE__ */ new Set();
+    const out = [];
+    for (const id of ids) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const it = byId.get(id);
+      if (it) out.push(it);
+    }
+    return out;
+  }
+  renderRow(list, c, isAvail) {
+    const row = list.createDiv({ cls: "mrw-wear-row" });
+    const head = row.createDiv({ cls: "mrw-wear-head" });
+    const check = head.createEl("input", { attr: { type: "checkbox" } });
+    check.checked = c.worn;
+    const labelText = c.slot.label + (c.slot.optional ? " (optional)" : "");
+    head.createSpan({ cls: "mrw-wear-label", text: labelText });
+    const controls = row.createDiv({ cls: "mrw-wear-controls" });
+    const itemSel = controls.createEl("select", { cls: "dropdown" });
+    if (c.slot.optional || c.candidates.length === 0 || !c.itemId) itemSel.createEl("option", { text: "\u2014 none \u2014", value: "" });
+    for (const it of c.candidates) {
+      const opt = itemSel.createEl("option", { text: isAvail(it) ? it.name : `${it.name} (unavailable)`, value: it.id });
+      if (it.id === c.itemId) opt.selected = true;
+    }
+    const colorSel = controls.createEl("select", { cls: "dropdown mrw-wear-color" });
+    const syncColors = () => {
+      colorSel.empty();
+      const it = this.opts.items.find((i) => i.id === c.itemId);
+      const colors = it ? availableColors(it) : [];
+      if (colors.length > 1) {
+        colorSel.createEl("option", { text: "Any colour", value: "" });
+        for (const col of colors) {
+          const opt = colorSel.createEl("option", { text: col, value: col });
+          if (col.trim().toLowerCase() === c.color.trim().toLowerCase()) opt.selected = true;
+        }
+        colorSel.style.display = "";
+      } else {
+        colorSel.style.display = "none";
+      }
+    };
+    syncColors();
+    const syncEnabled = () => {
+      itemSel.disabled = !c.worn;
+      colorSel.disabled = !c.worn;
+      row.toggleClass("mrw-off", !c.worn);
+    };
+    syncEnabled();
+    check.onchange = () => {
+      c.worn = check.checked;
+      if (c.worn && !c.itemId && c.candidates.length > 0) {
+        c.itemId = itemSel.value = c.candidates[0].id;
+        syncColors();
+      }
+      syncEnabled();
+    };
+    itemSel.onchange = () => {
+      c.itemId = itemSel.value;
+      c.color = "";
+      c.worn = !!c.itemId;
+      check.checked = c.worn;
+      syncColors();
+      syncEnabled();
+    };
+    colorSel.onchange = () => {
+      c.color = colorSel.value;
+    };
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
 // src/main.ts
-var MeridianWardrobePlugin = class extends import_obsidian35.Plugin {
+var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
   constructor() {
     super(...arguments);
     this.settings = DEFAULT_SETTINGS;
@@ -2629,13 +2761,30 @@ var MeridianWardrobePlugin = class extends import_obsidian35.Plugin {
   resolveCtx() {
     return { items: this.clothing.getAll(), typeLimits: this.typeLimits() };
   }
-  /** Wear the outfit: for each resolved slot, wear one available unit of the
-   * chosen item (preferring the slot's colour when it required one). */
+  /** Wear the outfit. When there's anything to choose — alternatives, optional
+   * pieces, a flexible slot, or an item with more than one colour — open the
+   * confirmation sheet so you can say what you actually wore; otherwise log it
+   * directly. */
   async wearOutfit(id) {
     const outfit = this.outfits.getAll().find((o) => o.id === id);
     if (!outfit) return;
-    const res = resolveOutfit(outfit, this.resolveCtx());
+    const ctx = this.resolveCtx();
+    if (outfitHasChoices(outfit, ctx.items)) {
+      new WearOutfitModal(this.app, {
+        outfit,
+        items: ctx.items,
+        typeLimits: ctx.typeLimits,
+        onConfirm: (choices) => void this.wearItems(choices)
+      }).open();
+      return;
+    }
+    const res = resolveOutfit(outfit, ctx);
     for (const slot of res.slots) if (slot.chosenItemId) await this.wearItemColor(slot.chosenItemId, slot.chosenColor);
+  }
+  /** Wear one unit of each chosen item (the confirmation sheet's result). */
+  async wearItems(choices) {
+    for (const c of choices) await this.wearItemColor(c.itemId, c.color);
+    new import_obsidian36.Notice(`Logged a wear on ${choices.length} item${choices.length === 1 ? "" : "s"}.`);
   }
   /** Wear one wearable unit of an item, preferring one of `color` if given. */
   async wearItemColor(itemId, color) {
@@ -2743,9 +2892,9 @@ var MeridianWardrobePlugin = class extends import_obsidian35.Plugin {
   // ---- shopping-list integration ----
   async pushToShopping(entry) {
     const res = await addToShoppingList(this.app, this.settings.shoppingPath, this.settings.shoppingListName, entry);
-    if (res === "added") new import_obsidian35.Notice(`Added "${entry.name}" to your ${this.settings.shoppingListName} list.`);
-    else if (res === "busy") new import_obsidian35.Notice("The shopping list is syncing right now \u2014 try again in a moment.");
-    else new import_obsidian35.Notice("Couldn't write to the shopping list.");
+    if (res === "added") new import_obsidian36.Notice(`Added "${entry.name}" to your ${this.settings.shoppingListName} list.`);
+    else if (res === "busy") new import_obsidian36.Notice("The shopping list is syncing right now \u2014 try again in a moment.");
+    else new import_obsidian36.Notice("Couldn't write to the shopping list.");
   }
   /** Wishlist → shopping (keeps the wish; you may want more than one). */
   async wishToShopping(id) {
