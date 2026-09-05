@@ -422,9 +422,19 @@
 }
 
 /* searchable item picker */
-.mrw-picker .mrw-search {
-	width: 100%;
+.mrw-picker-controls {
+	display: flex;
+	gap: 0.4rem;
 	margin-bottom: 0.5rem;
+	flex-wrap: wrap;
+}
+.mrw-picker-controls .mrw-search {
+	flex: 1 1 60%;
+	min-width: 8rem;
+}
+.mrw-picker-controls .dropdown {
+	flex: 1 1 30%;
+	min-width: 7rem;
 }
 .mrw-picker-list {
 	display: flex;

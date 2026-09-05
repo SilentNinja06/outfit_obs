@@ -1671,6 +1671,7 @@ var ItemPickerModal = class extends import_obsidian29.Modal {
     this.items = items;
     this.onPick = onPick;
     this.opts = opts;
+    this.cleanup = [];
   }
   onOpen() {
     var _a;
@@ -1678,17 +1679,23 @@ var ItemPickerModal = class extends import_obsidian29.Modal {
     contentEl.empty();
     contentEl.addClass("mrw-picker");
     contentEl.createEl("h3", { text: (_a = this.opts.title) != null ? _a : "Choose an item" });
-    const search = contentEl.createEl("input", { cls: "mrw-search", attr: { type: "search", placeholder: "Search name, type, tag, colour\u2026" } });
-    const listEl = contentEl.createDiv({ cls: "mrw-picker-list" });
     const pickable = this.items.filter((i) => {
       var _a2;
       return i.units.some((u) => !u.retired) && !((_a2 = this.opts.exclude) == null ? void 0 : _a2.has(i.id));
     });
+    const usedTypes = [...new Set(pickable.map((i) => i.type))].sort();
+    const controls = contentEl.createDiv({ cls: "mrw-picker-controls" });
+    const search = controls.createEl("input", { cls: "mrw-search", attr: { type: "search", placeholder: "Search name, tag, colour\u2026", enterkeyhint: "search" } });
+    const typeSel = controls.createEl("select", { cls: "dropdown" });
+    typeSel.createEl("option", { text: "All types", value: "" });
+    for (const t of usedTypes) typeSel.createEl("option", { text: t[0].toUpperCase() + t.slice(1), value: t });
+    const listEl = contentEl.createDiv({ cls: "mrw-picker-list" });
     const haystack = (i) => [i.name, i.type, ...i.tags, ...i.presentations, ...availableColors(i)].join(" ").toLowerCase();
     const render = () => {
       listEl.empty();
       const q = search.value.trim().toLowerCase();
-      const shown = q ? pickable.filter((i) => haystack(i).includes(q)) : pickable;
+      const type = typeSel.value;
+      const shown = pickable.filter((i) => (!type || i.type === type) && (!q || haystack(i).includes(q)));
       if (shown.length === 0) {
         listEl.createDiv({ cls: "mrw-empty mrw-slim", text: "No matching items." });
         return;
@@ -1707,10 +1714,28 @@ var ItemPickerModal = class extends import_obsidian29.Modal {
       }
     };
     search.oninput = render;
+    typeSel.onchange = render;
     render();
-    window.setTimeout(() => search.focus(), 0);
+    const fit = () => {
+      var _a2, _b;
+      const vh = (_b = (_a2 = window.visualViewport) == null ? void 0 : _a2.height) != null ? _b : window.innerHeight;
+      const top = listEl.getBoundingClientRect().top;
+      listEl.style.maxHeight = Math.max(120, vh - top - 16) + "px";
+    };
+    fit();
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", fit);
+      this.cleanup.push(() => vv.removeEventListener("resize", fit));
+    }
+    const dismiss = () => search.blur();
+    listEl.addEventListener("touchstart", dismiss, { passive: true });
+    listEl.addEventListener("scroll", dismiss, { passive: true });
+    if (!import_obsidian29.Platform.isMobile) window.setTimeout(() => search.focus(), 0);
   }
   onClose() {
+    for (const c of this.cleanup) c();
+    this.cleanup = [];
     this.contentEl.empty();
   }
 };
