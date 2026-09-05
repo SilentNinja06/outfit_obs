@@ -819,6 +819,21 @@ var SCHEDULE_HEADER = "%% Meridian Wardrobe \u2014 scheduled outfits (planned by
 
 // src/view.ts
 var import_obsidian27 = require("obsidian");
+
+// src/kbd.ts
+function attachKeyboardDismiss(container) {
+  const blur = (e) => {
+    const active = document.activeElement;
+    if (!active || active.tagName !== "INPUT" && active.tagName !== "TEXTAREA") return;
+    const target = e.target;
+    if (target && active.contains(target)) return;
+    active.blur();
+  };
+  container.addEventListener("touchmove", blur, { passive: true });
+  container.addEventListener("scroll", blur, { passive: true, capture: true });
+}
+
+// src/view.ts
 var VIEW_TYPE_WARDROBE = "meridian-wardrobe-view";
 var PRESENTATIONS = [
   { id: "masc", label: "Masc" },
@@ -862,6 +877,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
   }
   async onOpen() {
     this.render();
+    attachKeyboardDismiss(this.contentEl);
   }
   render() {
     const root = this.contentEl;
@@ -1574,6 +1590,7 @@ var ItemEditModal = class extends import_obsidian28.Modal {
     var _a;
     const { contentEl } = this;
     contentEl.empty();
+    attachKeyboardDismiss(contentEl);
     contentEl.addEventListener("keydown", (e) => {
       var _a2;
       if (e.key === "Enter" && ((_a2 = e.target) == null ? void 0 : _a2.tagName) !== "TEXTAREA") {
@@ -1786,6 +1803,7 @@ var OutfitEditModal = class extends import_obsidian30.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
+    attachKeyboardDismiss(contentEl);
     contentEl.addClass("mrw-outfit-modal");
     contentEl.createEl("h3", { text: this.editing ? "Edit outfit" : "Create outfit" });
     new import_obsidian30.Setting(contentEl).setName("Name").addText((t) => {
@@ -1956,6 +1974,7 @@ var WishlistModal = class extends import_obsidian31.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
+    attachKeyboardDismiss(contentEl);
     contentEl.addEventListener("keydown", (e) => {
       var _a;
       if (e.key === "Enter" && ((_a = e.target) == null ? void 0 : _a.tagName) !== "TEXTAREA") {
@@ -2075,6 +2094,7 @@ var TripEditModal = class extends import_obsidian33.Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
+    attachKeyboardDismiss(contentEl);
     contentEl.addEventListener("keydown", (e) => {
       var _a;
       if (e.key === "Enter" && ((_a = e.target) == null ? void 0 : _a.tagName) !== "TEXTAREA") {
