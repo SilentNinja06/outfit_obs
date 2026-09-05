@@ -1,7 +1,7 @@
 {
 	"id": "meridian-wardrobe",
 	"name": "Meridian Wardrobe",
-	"version": "0.11.1",
+	"version": "0.11.2",
 	"minAppVersion": "1.4.0",
 	"description": "Clothing manager, outfit planner, and trip packing. Track wear, laundry, and condition; assemble outfits with alternatives; plan packing lists. Mobile-first, syncs via Obsidian Sync.",
 	"author": "Sam Barker",

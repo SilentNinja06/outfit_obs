@@ -851,6 +851,15 @@ function attachKeyboardDismiss(container) {
   container.addEventListener("touchmove", blur, { passive: true });
   container.addEventListener("scroll", blur, { passive: true, capture: true });
 }
+function blurOnEnter(input) {
+  input.setAttribute("enterkeyhint", "search");
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      input.blur();
+    }
+  });
+}
 
 // src/view.ts
 var VIEW_TYPE_WARDROBE = "meridian-wardrobe-view";
@@ -896,7 +905,6 @@ var WardrobeView = class extends import_obsidian27.ItemView {
   }
   async onOpen() {
     this.render();
-    attachKeyboardDismiss(this.contentEl);
   }
   render() {
     const root = this.contentEl;
@@ -994,6 +1002,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
       this.filter.text = search.value || void 0;
       this.renderItemResults();
     };
+    blurOnEnter(search);
     const presRow = bar.createDiv({ cls: "mrw-chips" });
     for (const p of PRESENTATIONS) {
       const active = (_c = (_b = this.filter.presentations) == null ? void 0 : _b.includes(p.id)) != null ? _c : false;
@@ -1235,6 +1244,7 @@ var WardrobeView = class extends import_obsidian27.ItemView {
       this.outfitFilter.text = search.value || void 0;
       this.renderOutfitResults();
     };
+    blurOnEnter(search);
     const presRow = bar.createDiv({ cls: "mrw-chips" });
     for (const p of PRESENTATIONS) {
       const active = (_c = (_b = this.outfitFilter.presentations) == null ? void 0 : _b.includes(p.id)) != null ? _c : false;
