@@ -833,13 +833,21 @@ var import_obsidian27 = require("obsidian");
 
 // src/kbd.ts
 function attachKeyboardDismiss(container) {
+  const GRACE_MS = 700;
+  let focusedAt = 0;
+  const onFocus = (e) => {
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) focusedAt = Date.now();
+  };
   const blur = (e) => {
     const active = document.activeElement;
     if (!active || active.tagName !== "INPUT" && active.tagName !== "TEXTAREA") return;
+    if (Date.now() - focusedAt < GRACE_MS) return;
     const target = e.target;
     if (target && active.contains(target)) return;
     active.blur();
   };
+  container.addEventListener("focusin", onFocus, { passive: true, capture: true });
   container.addEventListener("touchmove", blur, { passive: true });
   container.addEventListener("scroll", blur, { passive: true, capture: true });
 }
@@ -1768,7 +1776,12 @@ var ItemPickerModal = class extends import_obsidian29.Modal {
       vv.addEventListener("resize", fit);
       this.cleanup.push(() => vv.removeEventListener("resize", fit));
     }
-    const dismiss = () => search.blur();
+    let focusedAt = 0;
+    search.addEventListener("focus", () => focusedAt = Date.now(), { passive: true });
+    const dismiss = () => {
+      if (Date.now() - focusedAt < 700) return;
+      search.blur();
+    };
     listEl.addEventListener("touchstart", dismiss, { passive: true });
     listEl.addEventListener("scroll", dismiss, { passive: true });
     if (!import_obsidian29.Platform.isMobile) window.setTimeout(() => search.focus(), 0);
