@@ -514,6 +514,22 @@ function outfitHasChoices(outfit, items) {
   }
   return false;
 }
+function tripLaundryList(trip, items) {
+  var _a, _b;
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const out = [];
+  for (const g of (_a = trip.packedClothing) != null ? _a : []) {
+    const it = byId.get(g.itemId);
+    if (!it) continue;
+    const want = (_b = g.color) == null ? void 0 : _b.trim().toLowerCase();
+    const hasClean = it.units.some((u) => {
+      var _a2;
+      return !u.retired && u.washState === "clean" && (!want || ((_a2 = u.color) != null ? _a2 : "").trim().toLowerCase() === want);
+    });
+    if (!hasClean) out.push({ itemId: it.id, name: it.name, color: g.color, reason: want ? `no clean ${g.color} copy` : "no clean copy" });
+  }
+  return out;
+}
 var DEFAULT_TOILETRIES = ["Toothbrush", "Toothpaste", "Shaver", "Deodorant", "Shampoo", "Hairbrush"];
 function packingLineKey(item) {
   return `${item.source}:${item.name.trim().toLowerCase()}`;
@@ -1662,6 +1678,11 @@ var WardrobeView = class extends import_obsidian28.ItemView {
     const h = box.createDiv({ cls: "mrw-pack-cat-h" });
     h.createSpan({ text: "Wardrobe items" });
     this.iconBtn(h, "plus", "Add clothing from wardrobe", () => this.plugin.openAddClothingToPacking(trip.id));
+    if (trip.flags.swimming && !trip.swimOutfitId) {
+      const swim = box.createDiv({ cls: "mrw-pack-line mrw-swim-todo" });
+      swim.createSpan({ cls: "mrw-pack-name", text: "\u{1FA71} Swimsuit \u2014 tap to choose your swim outfit" });
+      swim.onclick = (e) => this.plugin.openSwimOutfitPicker(e, trip.id);
+    }
     if (garments.length === 0) {
       box.createDiv({ cls: "mrw-empty mrw-slim", text: "Add outfits or clothing to build this list." });
       return;
@@ -1744,6 +1765,13 @@ var WardrobeView = class extends import_obsidian28.ItemView {
       onSubmit: (name) => void this.plugin.addTripSection(trip.id, name)
     }).open();
     this.renderPackingAdd(root, trip);
+    const tools = root.createDiv({ cls: "mrw-pack-tools" });
+    const printBtn = tools.createEl("button", { cls: "mrw-linkbtn", text: "\u{1F5A8} Print / export packing list" });
+    printBtn.onclick = () => void this.plugin.exportPackingChecklist(trip.id);
+    if (!trip.immediateDeparture) {
+      const laundryBtn = tools.createEl("button", { cls: "mrw-linkbtn", text: "\u{1F9FA} Laundry list" });
+      laundryBtn.onclick = () => void this.plugin.exportLaundryList(trip.id);
+    }
   }
   /** Prompt for an item name (with catalog autocomplete) and file it under a
    * specific section. */
@@ -3307,6 +3335,122 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
       },
       { title: trip.immediateDeparture ? "Add available clothing" : "Add clothing to pack" }
     ).open();
+  }
+  // ---- swim outfit ----
+  /** Pick the outfit that satisfies the swimming flag (swim-tagged outfits first).
+   * Choosing one records it and runs the normal pack-selection flow. */
+  openSwimOutfitPicker(evt, id) {
+    const outfits = this.outfits.getAll().filter((o) => !o.retired);
+    const swimFirst = [...outfits].sort((a, b) => Number(b.tags.includes("swim")) - Number(a.tags.includes("swim")) || a.name.localeCompare(b.name));
+    if (swimFirst.length === 0) {
+      new import_obsidian36.Notice("No outfits yet \u2014 create a swim outfit first.");
+      return;
+    }
+    const menu = new import_obsidian36.Menu();
+    for (const o of swimFirst) {
+      menu.addItem((i) => i.setTitle(o.name + (o.tags.includes("swim") ? "  \u{1FA71}" : "")).onClick(() => void this.setSwimOutfit(id, o.id)));
+    }
+    menu.showAtMouseEvent(evt);
+  }
+  async setSwimOutfit(id, outfitId) {
+    await this.mutateTrip(id, (t) => ({ ...t, swimOutfitId: outfitId }));
+    await this.addPlannedOutfit(id, outfitId);
+  }
+  // ---- printable / exportable lists ----
+  tripNotePath(trip, kind) {
+    const folder = this.settings.tripsPath.split("/").slice(0, -1).join("/");
+    const safe = trip.name.replace(/[\\/:*?"<>|#^[\]]/g, "").trim() || "Trip";
+    return (folder ? folder + "/" : "") + `${safe} \u2014 ${kind}.md`;
+  }
+  async writeAndOpenNote(path, content) {
+    const folder = path.split("/").slice(0, -1).join("/");
+    if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+      try {
+        await this.app.vault.createFolder(folder);
+      } catch (e) {
+      }
+    }
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    let file;
+    if (existing instanceof import_obsidian36.TFile) {
+      await this.app.vault.modify(existing, content);
+      file = existing;
+    } else {
+      file = await this.app.vault.create(path, content);
+    }
+    await this.app.workspace.getLeaf(true).openFile(file);
+  }
+  /** Export a tickable packing checklist as a Markdown note (open it, then use
+   * Obsidian's print/export-to-PDF to print). */
+  async exportPackingChecklist(id) {
+    const trip = this.trips.getAll().find((t) => t.id === id);
+    if (!trip) return;
+    await this.writeAndOpenNote(this.tripNotePath(trip, "Packing"), this.buildPackingMarkdown(trip));
+    new import_obsidian36.Notice("Packing checklist exported \u2014 print it from here.");
+  }
+  /** Export the pre-departure laundry list as a Markdown note. */
+  async exportLaundryList(id) {
+    const trip = this.trips.getAll().find((t) => t.id === id);
+    if (!trip) return;
+    const needs = tripLaundryList(trip, this.clothing.getAll());
+    const lines = [`# ${trip.name} \u2014 Laundry before packing`, ""];
+    if (needs.length === 0) lines.push("_Everything you've packed already has a clean copy. Nothing to wash._");
+    else {
+      lines.push("Wash these before you pack:", "");
+      for (const n of needs) lines.push(`- [ ] ${n.name}${n.color ? ` (${n.color})` : ""} \u2014 ${n.reason}`);
+    }
+    lines.push("");
+    await this.writeAndOpenNote(this.tripNotePath(trip, "Laundry"), lines.join("\n"));
+    new import_obsidian36.Notice(needs.length ? `${needs.length} item${needs.length === 1 ? "" : "s"} to wash \u2014 list exported.` : "Nothing needs washing.");
+  }
+  buildPackingMarkdown(trip) {
+    var _a, _b, _c, _d;
+    const items = this.clothing.getAll();
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const L = [];
+    L.push(`# ${trip.name} \u2014 Packing`, "");
+    const meta = `${trip.days} day${trip.days === 1 ? "" : "s"}` + (trip.startDate ? `, ${trip.startDate}${trip.endDate ? ` \u2192 ${trip.endDate}` : ""}` : "");
+    L.push(`_${meta}_`, "");
+    const weather = [
+      ["wetWeather", "\u{1F327} wet weather"],
+      ["coldWeather", "\u{1F976} cold weather"],
+      ["hotWeather", "\u{1F525} hot weather"],
+      ["snow", "\u2744 snow"]
+    ];
+    const active = weather.filter(([k]) => trip.flags[k]).map(([, s]) => s);
+    if (active.length) L.push(`> **Pack for:** ${active.join(", ")}`, "");
+    const req = packRequirements(trip, items, this.typeLimits());
+    const labels = { tops: "Tops", bottoms: "Pants", socks: "Socks", bras: "Bras" };
+    L.push("## Coverage", "");
+    for (const r of req) L.push(`- ${(_a = labels[r.bucket]) != null ? _a : r.bucket}: ${r.covered}/${r.target}${r.covered >= r.target ? " \u2713" : ""}`);
+    L.push("");
+    const garments = (_b = trip.packedClothing) != null ? _b : [];
+    if (garments.length) {
+      L.push("## Wardrobe items", "");
+      for (const g of garments) {
+        const it = byId.get(g.itemId);
+        const name = it ? it.name : "(deleted item)";
+        const limit = it ? effectiveWearLimit(it, this.typeLimits()) : void 0;
+        const bucket = it ? packBucketOf(it.type) : void 0;
+        const cover = bucket ? ` \u2014 covers ${g.covers}${limit ? `/${limit}` : ""} day${g.covers === 1 ? "" : "s"}` : "";
+        L.push(`- [ ] ${name}${g.color ? ` (${g.color})` : ""}${cover}`);
+      }
+      L.push("");
+    }
+    const lines = computePacking(trip);
+    const byCat = /* @__PURE__ */ new Map();
+    for (const l of lines) {
+      const arr = (_c = byCat.get(l.category)) != null ? _c : byCat.set(l.category, []).get(l.category);
+      arr.push(`- [ ] ${l.name}${l.qty > 1 ? ` \xD7${l.qty}` : ""}`);
+    }
+    const known = ["clothing", "toiletries", "gear", "documents", "other"];
+    const order = [.../* @__PURE__ */ new Set([...known.filter((c) => byCat.has(c)), ...(_d = trip.sections) != null ? _d : [], ...[...byCat.keys()].filter((c) => !known.includes(c))])];
+    for (const cat of order) {
+      const rows = byCat.get(cat);
+      if (!rows || rows.length === 0) continue;
+      L.push(`## ${cat[0].toUpperCase() + cat.slice(1)}`, "", ...rows, "");
+    }
+    return L.join("\n");
   }
   /** Preserve every distinct custom packing item so it can autocomplete later. */
   async noteCatalog(name, category) {

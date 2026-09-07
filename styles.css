@@ -567,6 +567,20 @@
 .mrw-pack-garment {
 	gap: 0.4rem;
 }
+.mrw-swim-todo {
+	cursor: pointer;
+	background: var(--background-modifier-error-hover, rgba(233, 165, 41, 0.18));
+	border-left: 3px solid var(--color-orange, #e9a529);
+	border-radius: 8px;
+	padding: 0.4rem 0.6rem;
+	font-weight: 600;
+}
+.mrw-pack-tools {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.8rem;
+	margin-top: 0.6rem;
+}
 .mrw-covers-step {
 	display: inline-flex;
 	align-items: center;
