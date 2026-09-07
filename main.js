@@ -2497,31 +2497,41 @@ var WearOutfitModal = class extends import_obsidian35.Modal {
     this.choices = [];
   }
   onOpen() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e, _f, _g;
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("mrw-wear");
     attachKeyboardDismiss(contentEl);
-    const { outfit, items, typeLimits } = this.opts;
-    contentEl.createEl("h3", { text: `Wear \u201C${outfit.name}\u201D` });
-    contentEl.createEl("p", { cls: "mrw-sub", text: "Pick what you actually wore. Untick a slot to leave it out." });
+    const { outfit, items, typeLimits, skipTypes, includeUnavailable } = this.opts;
+    contentEl.createEl("h3", { text: (_a = this.opts.title) != null ? _a : `Wear \u201C${outfit.name}\u201D` });
+    contentEl.createEl("p", { cls: "mrw-sub", text: (_b = this.opts.subtitle) != null ? _b : "Pick what you actually wore. Untick a slot to leave it out." });
     const resolved = resolveOutfit(outfit, { items, typeLimits });
     const chosenBySlot = new Map(resolved.slots.map((s) => [s.slotId, s]));
     const isAvail = (i) => itemAvailability(i, typeLimits).available;
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const skip = new Set(skipTypes != null ? skipTypes : []);
     for (const slot of outfit.slots) {
       const candidates = this.candidatesFor(slot).sort((a, b) => Number(isAvail(b)) - Number(isAvail(a)) || a.name.localeCompare(b.name));
       const res = chosenBySlot.get(slot.id);
-      const itemId = (_a = res == null ? void 0 : res.chosenItemId) != null ? _a : "";
-      this.choices.push({ slot, candidates, itemId, color: (_c = (_b = res == null ? void 0 : res.chosenColor) != null ? _b : slot.color) != null ? _c : "", worn: !!itemId });
+      let itemId = (_c = res == null ? void 0 : res.chosenItemId) != null ? _c : "";
+      if (!itemId && includeUnavailable) {
+        itemId = slot.primaryItemId && byId.has(slot.primaryItemId) ? slot.primaryItemId : (_e = (_d = candidates[0]) == null ? void 0 : _d.id) != null ? _e : "";
+      }
+      const chosen = itemId ? byId.get(itemId) : void 0;
+      if (chosen && skip.has(chosen.type)) continue;
+      this.choices.push({ slot, candidates, itemId, color: (_g = (_f = res == null ? void 0 : res.chosenColor) != null ? _f : slot.color) != null ? _g : "", worn: !!itemId });
     }
     const list = contentEl.createDiv({ cls: "mrw-wear-list" });
     for (const c of this.choices) this.renderRow(list, c, isAvail);
     new import_obsidian35.Setting(contentEl).addButton((b) => b.setButtonText("Cancel").onClick(() => this.close())).addButton(
-      (b) => b.setButtonText("Log wear").setCta().onClick(() => {
-        const picks = this.choices.filter((c) => c.worn && c.itemId).map((c) => ({ itemId: c.itemId, color: c.color || void 0 }));
-        this.opts.onConfirm(picks);
-        this.close();
-      })
+      (b) => {
+        var _a2;
+        return b.setButtonText((_a2 = this.opts.confirmLabel) != null ? _a2 : "Log wear").setCta().onClick(() => {
+          const picks = this.choices.filter((c) => c.worn && c.itemId).map((c) => ({ itemId: c.itemId, color: c.color || void 0 }));
+          this.opts.onConfirm(picks);
+          this.close();
+        });
+      }
     );
   }
   /** Items that may fill a slot: a flexible slot's matching items, or a specific
@@ -3169,10 +3179,35 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     await this.mutateTrip(id, (t) => ({ ...t, plannedOutfitIds: t.plannedOutfitIds.filter((o) => o !== outfitId) }));
   }
   /** Plan an outfit for a trip: add it to the outfit list AND add its required
-   * garments to the packing list (deduped, wear-limit-capped). */
+   * garments to the packing list. When the outfit has variations (alternatives,
+   * optional pieces, flexible slots, or multi-colour items) a picker opens so you
+   * choose which version/items to pack; otherwise the intended items are added. */
   async addPlannedOutfit(id, outfitId) {
     await this.addTripOutfit(id, outfitId);
+    const outfit = this.outfits.getAll().find((o) => o.id === outfitId);
+    const trip = this.trips.getAll().find((t) => t.id === id);
+    if (!outfit || !trip) return;
+    const ctx = this.resolveCtx();
+    if (outfitHasChoices(outfit, ctx.items)) {
+      new WearOutfitModal(this.app, {
+        outfit,
+        items: ctx.items,
+        typeLimits: ctx.typeLimits,
+        title: `Pack \u201C${outfit.name}\u201D`,
+        subtitle: "Pick which version/items to pack. Untick a slot to leave it out.",
+        confirmLabel: "Add to packing",
+        skipTypes: ["underwear"],
+        includeUnavailable: !trip.immediateDeparture,
+        onConfirm: (choices) => void this.addPackedGarments(id, choices, outfitId)
+      }).open();
+      return;
+    }
     await this.addOutfitToPacking(id, outfitId);
+  }
+  /** Add several chosen garments to a trip's packing list at once. */
+  async addPackedGarments(id, choices, sourceOutfitId) {
+    for (const c of choices) await this.addPackedGarment(id, c.itemId, c.color, sourceOutfitId);
+    if (choices.length) new import_obsidian36.Notice(`Added ${choices.length} item${choices.length === 1 ? "" : "s"} to packing.`);
   }
   // ---- packed clothing (inventory garments on the packing list) ----
   /** The garments an outfit contributes to packing. For an immediate departure
