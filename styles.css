@@ -529,6 +529,51 @@
 	color: var(--text-accent);
 }
 
+/* packing requirement counters */
+.mrw-pack-req {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.35rem;
+	align-items: center;
+	margin: 0.4rem 0 0.6rem;
+}
+.mrw-req-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	padding: 0.15rem 0.5rem;
+	border-radius: 999px;
+	font-size: 0.82em;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+}
+.mrw-req-chip.mrw-ok {
+	background: var(--background-modifier-success, rgba(70, 170, 90, 0.18));
+	border-color: transparent;
+}
+.mrw-req-chip.mrw-out {
+	background: var(--background-modifier-error-hover, rgba(220, 90, 90, 0.14));
+	border-color: transparent;
+}
+.mrw-req-label {
+	font-weight: 600;
+}
+.mrw-req-note {
+	font-size: 0.78em;
+	color: var(--text-muted);
+}
+
+/* packed garment rows */
+.mrw-pack-garment {
+	gap: 0.4rem;
+}
+.mrw-covers-step {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.1rem;
+	margin-left: auto;
+}
+
 /* packing section header actions */
 .mrw-pack-cat-h {
 	display: flex;

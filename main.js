@@ -519,18 +519,12 @@ function packingLineKey(item) {
   return `${item.source}:${item.name.trim().toLowerCase()}`;
 }
 function computePacking(trip, opts = {}) {
-  var _a, _b, _c, _d, _e;
+  var _a, _b, _c;
   const days = Math.max(1, Math.floor(trip.days || 1));
-  const underwearPerDay = (_a = opts.underwearPerDay) != null ? _a : 1;
-  const socksPerDay = (_b = opts.socksPerDay) != null ? _b : 1;
-  const spare = (_c = opts.spare) != null ? _c : 1;
-  const toiletries = (_d = opts.toiletries) != null ? _d : DEFAULT_TOILETRIES;
-  const auto = [
-    { name: "Underwear", category: "clothing", qty: days * underwearPerDay + spare, source: "auto" },
-    { name: "Socks", category: "clothing", qty: days * socksPerDay + spare, source: "auto" }
-  ];
+  const spare = (_a = opts.spare) != null ? _a : 2;
+  const toiletries = (_b = opts.toiletries) != null ? _b : DEFAULT_TOILETRIES;
+  const auto = [{ name: "Underwear", category: "clothing", qty: days + spare, source: "auto" }];
   if (trip.flags.swimming) {
-    auto.push({ name: "Swimwear", category: "clothing", qty: 1, source: "auto" });
     auto.push({ name: "Towel", category: "gear", qty: 1, source: "auto" });
   }
   if (trip.flags.active) {
@@ -543,9 +537,33 @@ function computePacking(trip, opts = {}) {
   });
   for (const e of trip.extraItems) {
     const key = packingLineKey(e);
-    lines.push({ ...e, packed: (_e = trip.packed[key]) != null ? _e : e.packed });
+    lines.push({ ...e, packed: (_c = trip.packed[key]) != null ? _c : e.packed });
   }
   return lines;
+}
+var PACK_BUCKETS = ["tops", "bottoms", "socks", "bras"];
+var BUCKET_OF = { top: "tops", bottom: "bottoms", socks: "socks", bra: "bras" };
+function packBucketOf(type) {
+  return BUCKET_OF[type];
+}
+function packTargetPerBucket(trip) {
+  const days = Math.max(1, Math.floor(trip.days || 1));
+  return trip.laundryService ? Math.ceil(days / 2) : days;
+}
+function packRequirements(trip, items, typeLimits) {
+  var _a, _b;
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const target = packTargetPerBucket(trip);
+  const covered = { tops: 0, bottoms: 0, socks: 0, bras: 0 };
+  for (const g of (_a = trip.packedClothing) != null ? _a : []) {
+    const it = byId.get(g.itemId);
+    if (!it) continue;
+    const bucket = BUCKET_OF[it.type];
+    if (!bucket) continue;
+    const limit = (_b = effectiveWearLimit(it, typeLimits)) != null ? _b : g.covers;
+    covered[bucket] += Math.min(g.covers, limit);
+  }
+  return PACK_BUCKETS.map((bucket) => ({ bucket, target, covered: covered[bucket], remaining: Math.max(0, target - covered[bucket]) }));
 }
 function suggestCatalog(catalog, prefix, limit = 8) {
   const p = prefix.trim().toLowerCase();
@@ -1616,19 +1634,72 @@ var WardrobeView = class extends import_obsidian28.ItemView {
       picker.createEl("option", { text: "\uFF0B Add a planned outfit\u2026", value: "" });
       for (const o of addable) picker.createEl("option", { text: o.name, value: o.id });
       picker.onchange = () => {
-        if (picker.value) void this.plugin.addTripOutfit(trip.id, picker.value);
+        if (picker.value) void this.plugin.addPlannedOutfit(trip.id, picker.value);
       };
     }
   }
+  /** The # tops / # bottoms / # socks / # bras coverage counters that tick down
+   * as garments are assigned (a garment covers up to its wear-limit days). */
+  renderPackRequirements(root, trip) {
+    var _a;
+    const req = packRequirements(trip, this.plugin.clothing.getAll(), this.plugin.typeLimits());
+    const box = root.createDiv({ cls: "mrw-pack-req" });
+    const labels = { tops: "Tops", bottoms: "Pants", socks: "Socks", bras: "Bras" };
+    for (const r of req) {
+      const met = r.covered >= r.target;
+      const chip = box.createSpan({ cls: "mrw-req-chip " + (met ? "mrw-ok" : "mrw-out") });
+      chip.createSpan({ cls: "mrw-req-label", text: (_a = labels[r.bucket]) != null ? _a : r.bucket });
+      chip.createSpan({ cls: "mrw-req-count", text: `${r.covered}/${r.target}` });
+    }
+    if (trip.laundryService) box.createSpan({ cls: "mrw-req-note", text: "laundry: \xBD days" });
+  }
+  /** Inventory garments assigned to the trip — each with a colour/number, a
+   * days-covered stepper (capped at its wear limit), and a packed checkbox. */
+  renderPackedGarments(root, trip) {
+    var _a;
+    const garments = (_a = trip.packedClothing) != null ? _a : [];
+    const box = root.createDiv({ cls: "mrw-pack-cat" });
+    const h = box.createDiv({ cls: "mrw-pack-cat-h" });
+    h.createSpan({ text: "Wardrobe items" });
+    this.iconBtn(h, "plus", "Add clothing from wardrobe", () => this.plugin.openAddClothingToPacking(trip.id));
+    if (garments.length === 0) {
+      box.createDiv({ cls: "mrw-empty mrw-slim", text: "Add outfits or clothing to build this list." });
+      return;
+    }
+    const byId = new Map(this.plugin.clothing.getAll().map((i) => [i.id, i]));
+    for (const g of garments) {
+      const item = byId.get(g.itemId);
+      const key = `clothing:${g.id}`;
+      const packed = !!trip.packed[key];
+      const limit = item ? effectiveWearLimit(item, this.plugin.typeLimits()) : void 0;
+      const row = box.createDiv({ cls: "mrw-pack-line mrw-pack-garment" });
+      const cb = row.createEl("input", { attr: { type: "checkbox" } });
+      cb.checked = packed;
+      cb.onchange = () => void this.plugin.setTripPacked(trip.id, key, cb.checked);
+      const nameWrap = row.createSpan({ cls: "mrw-pack-name" + (packed ? " mrw-packed" : "") });
+      nameWrap.createSpan({ text: item ? item.name : "(deleted item)" });
+      if (g.color) this.colorDot(nameWrap, g.color);
+      const bucket = item ? packBucketOf(item.type) : void 0;
+      if (bucket) nameWrap.createSpan({ cls: "mrw-badge", text: `covers ${g.covers}${limit ? `/${limit}` : ""} day${g.covers === 1 ? "" : "s"}` });
+      const step = row.createDiv({ cls: "mrw-covers-step" });
+      this.iconBtn(step, "minus", "Cover fewer days", () => void this.plugin.setPackedCovers(trip.id, g.id, g.covers - 1));
+      this.iconBtn(step, "plus", "Cover more days", () => void this.plugin.setPackedCovers(trip.id, g.id, g.covers + 1), !!limit && g.covers >= limit);
+      this.iconBtn(step, "x", "Remove", () => void this.plugin.removePackedGarment(trip.id, g.id));
+    }
+  }
   renderTripPacking(root, trip) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const lines = computePacking(trip);
-    const packedCount = lines.filter((l) => l.packed).length;
-    root.createEl("h4", { cls: "mrw-section-h", text: `Packing \xB7 ${packedCount}/${lines.length}` });
+    const garments = (_a = trip.packedClothing) != null ? _a : [];
+    const garmentPacked = (g) => !!trip.packed[`clothing:${g.id}`];
+    const packedCount = lines.filter((l) => l.packed).length + garments.filter(garmentPacked).length;
+    root.createEl("h4", { cls: "mrw-section-h", text: `Packing \xB7 ${packedCount}/${lines.length + garments.length}` });
+    this.renderPackRequirements(root, trip);
+    this.renderPackedGarments(root, trip);
     const byCat = /* @__PURE__ */ new Map();
-    for (const l of lines) ((_a = byCat.get(l.category)) != null ? _a : byCat.set(l.category, []).get(l.category)).push(l);
+    for (const l of lines) ((_b = byCat.get(l.category)) != null ? _b : byCat.set(l.category, []).get(l.category)).push(l);
     const known = ["clothing", "toiletries", "gear", "documents", "other"];
-    const userSections = (_b = trip.sections) != null ? _b : [];
+    const userSections = (_c = trip.sections) != null ? _c : [];
     const order = [];
     const push = (c) => {
       if (!order.includes(c)) order.push(c);
@@ -1637,7 +1708,7 @@ var WardrobeView = class extends import_obsidian28.ItemView {
     for (const c of userSections) push(c);
     for (const c of [...byCat.keys()].sort()) if (!known.includes(c)) push(c);
     for (const cat of order) {
-      const items = (_c = byCat.get(cat)) != null ? _c : [];
+      const items = (_d = byCat.get(cat)) != null ? _d : [];
       const isUserSection = userSections.some((s) => s.toLowerCase() === cat.toLowerCase());
       const box = root.createDiv({ cls: "mrw-pack-cat" });
       const h = box.createDiv({ cls: "mrw-pack-cat-h" });
@@ -3097,6 +3168,111 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
   async removeTripOutfit(id, outfitId) {
     await this.mutateTrip(id, (t) => ({ ...t, plannedOutfitIds: t.plannedOutfitIds.filter((o) => o !== outfitId) }));
   }
+  /** Plan an outfit for a trip: add it to the outfit list AND add its required
+   * garments to the packing list (deduped, wear-limit-capped). */
+  async addPlannedOutfit(id, outfitId) {
+    await this.addTripOutfit(id, outfitId);
+    await this.addOutfitToPacking(id, outfitId);
+  }
+  // ---- packed clothing (inventory garments on the packing list) ----
+  /** The garments an outfit contributes to packing. For an immediate departure
+   * only currently-available pieces count (via resolveOutfit); for a planned trip
+   * the intended primary/flex items are used regardless of current availability.
+   * Underwear is skipped — it's auto-added by day count. */
+  plannedOutfitItems(outfit, immediate) {
+    var _a;
+    const ctx = this.resolveCtx();
+    const byId = new Map(ctx.items.map((i) => [i.id, i]));
+    const out = [];
+    const consider = (itemId, color) => {
+      if (!itemId) return;
+      const it = byId.get(itemId);
+      if (!it || it.type === "underwear") return;
+      out.push({ itemId, color });
+    };
+    if (immediate) {
+      for (const s of resolveOutfit(outfit, ctx).slots) if (s.chosenItemId) consider(s.chosenItemId, s.chosenColor);
+      return out;
+    }
+    for (const slot of outfit.slots) {
+      if (isFlexibleSlot(slot)) {
+        const match = (_a = ctx.items.find((it) => itemMatchesCriteria(it, slot.match) && itemAvailability(it, ctx.typeLimits).available)) != null ? _a : ctx.items.find((it) => itemMatchesCriteria(it, slot.match));
+        consider(match == null ? void 0 : match.id);
+      } else {
+        consider(slot.primaryItemId || void 0, slot.color);
+      }
+    }
+    return out;
+  }
+  async addOutfitToPacking(id, outfitId) {
+    const outfit = this.outfits.getAll().find((o) => o.id === outfitId);
+    const trip = this.trips.getAll().find((t) => t.id === id);
+    if (!outfit || !trip) return;
+    const picks = this.plannedOutfitItems(outfit, !!trip.immediateDeparture);
+    for (const p of picks) await this.addPackedGarment(id, p.itemId, p.color, outfitId);
+    if (picks.length) new import_obsidian36.Notice(`Added ${picks.length} item${picks.length === 1 ? "" : "s"} from ${outfit.name} to packing.`);
+  }
+  /** Assign a garment to the packing list. Re-assigning the same item+colour
+   * raises how many days it covers, capped at the item's wear limit. */
+  async addPackedGarment(id, itemId, color, sourceOutfitId) {
+    var _a;
+    const item = this.clothing.getAll().find((i) => i.id === itemId);
+    if (!item) return;
+    const limit = (_a = effectiveWearLimit(item, this.typeLimits())) != null ? _a : Number.MAX_SAFE_INTEGER;
+    const same = (g) => {
+      var _a2;
+      return g.itemId === itemId && ((_a2 = g.color) != null ? _a2 : "").trim().toLowerCase() === (color != null ? color : "").trim().toLowerCase();
+    };
+    await this.mutateTrip(id, (t) => {
+      var _a2;
+      const list = (_a2 = t.packedClothing) != null ? _a2 : [];
+      const existing = list.find(same);
+      if (existing) {
+        const covers = Math.min(existing.covers + 1, limit);
+        return { ...t, packedClothing: list.map((g) => g === existing ? { ...g, covers } : g) };
+      }
+      return { ...t, packedClothing: [...list, { id: genId("pg"), itemId, color, covers: 1, sourceOutfitId }] };
+    });
+  }
+  async removePackedGarment(id, packedId) {
+    await this.mutateTrip(id, (t) => {
+      var _a;
+      return { ...t, packedClothing: ((_a = t.packedClothing) != null ? _a : []).filter((g) => g.id !== packedId) };
+    });
+  }
+  /** Set how many days a packed garment covers (clamped to 1..wear-limit; 0 removes it). */
+  async setPackedCovers(id, packedId, covers) {
+    await this.mutateTrip(id, (t) => {
+      var _a, _b;
+      const list = (_a = t.packedClothing) != null ? _a : [];
+      const g = list.find((x) => x.id === packedId);
+      if (!g) return t;
+      const item = this.clothing.getAll().find((i) => i.id === g.itemId);
+      const limit = item ? (_b = effectiveWearLimit(item, this.typeLimits())) != null ? _b : Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+      const c = Math.max(0, Math.min(Math.floor(covers), limit));
+      if (c === 0) return { ...t, packedClothing: list.filter((x) => x.id !== packedId) };
+      return { ...t, packedClothing: list.map((x) => x.id === packedId ? { ...x, covers: c } : x) };
+    });
+  }
+  /** Open the wardrobe picker to add a garment directly to a trip's packing list.
+   * An immediate-departure trip only offers currently-available items. */
+  openAddClothingToPacking(id) {
+    const trip = this.trips.getAll().find((t) => t.id === id);
+    if (!trip) return;
+    const all = this.clothing.getAll();
+    const items = trip.immediateDeparture ? all.filter((i) => itemAvailability(i, this.typeLimits()).available) : all;
+    new ItemPickerModal(
+      this.app,
+      items,
+      (itemId) => {
+        const item = all.find((i) => i.id === itemId);
+        const colors = item ? availableColors(item) : [];
+        if (colors.length > 1) new ColorPromptModal(this.app, void 0, (color) => void this.addPackedGarment(id, itemId, color)).open();
+        else void this.addPackedGarment(id, itemId, colors[0]);
+      },
+      { title: trip.immediateDeparture ? "Add available clothing" : "Add clothing to pack" }
+    ).open();
+  }
   /** Preserve every distinct custom packing item so it can autocomplete later. */
   async noteCatalog(name, category) {
     const key = name.trim().toLowerCase();
@@ -3110,7 +3286,7 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     const next = this.trips.getAll().map((t) => {
       if (t.id !== id) return t;
       changed = true;
-      return fn({ ...t, flags: { ...t.flags }, plannedOutfitIds: [...t.plannedOutfitIds], sections: t.sections ? [...t.sections] : t.sections, extraItems: t.extraItems.map((e) => ({ ...e })), packed: { ...t.packed } });
+      return fn({ ...t, flags: { ...t.flags }, plannedOutfitIds: [...t.plannedOutfitIds], packedClothing: t.packedClothing ? t.packedClothing.map((g) => ({ ...g })) : t.packedClothing, sections: t.sections ? [...t.sections] : t.sections, extraItems: t.extraItems.map((e) => ({ ...e })), packed: { ...t.packed } });
     });
     if (!changed) return;
     this.trips.setAll(next);
