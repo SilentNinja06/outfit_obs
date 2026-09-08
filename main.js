@@ -562,9 +562,6 @@ function computePacking(trip, opts = {}) {
   if (trip.flags.swimming) {
     auto.push({ name: "Towel", category: "gear", qty: 1, source: "auto" });
   }
-  if (trip.flags.active) {
-    auto.push({ name: "Activewear set", category: "clothing", qty: Math.max(1, Math.ceil(days / 2)), source: "auto" });
-  }
   for (const t of toiletries) auto.push({ name: t, category: "toiletries", qty: 1, source: "auto" });
   const lines = auto.map((a) => {
     const key = packingLineKey(a);
@@ -577,9 +574,51 @@ function computePacking(trip, opts = {}) {
   return lines;
 }
 var PACK_BUCKETS = ["tops", "bottoms", "socks", "bras"];
-var BUCKET_OF = { top: "tops", bottom: "bottoms", socks: "socks", bra: "bras" };
+var BUCKET_SYNONYMS = {
+  // tops
+  top: "tops",
+  tops: "tops",
+  tee: "tops",
+  tshirt: "tops",
+  "t-shirt": "tops",
+  shirt: "tops",
+  blouse: "tops",
+  tank: "tops",
+  "tank top": "tops",
+  cami: "tops",
+  camisole: "tops",
+  sweater: "tops",
+  jumper: "tops",
+  hoodie: "tops",
+  pullover: "tops",
+  polo: "tops",
+  // bottoms
+  bottom: "bottoms",
+  bottoms: "bottoms",
+  pant: "bottoms",
+  pants: "bottoms",
+  jean: "bottoms",
+  jeans: "bottoms",
+  trouser: "bottoms",
+  trousers: "bottoms",
+  short: "bottoms",
+  shorts: "bottoms",
+  skirt: "bottoms",
+  legging: "bottoms",
+  leggings: "bottoms",
+  chinos: "bottoms",
+  slacks: "bottoms",
+  // socks
+  sock: "socks",
+  socks: "socks",
+  // bras
+  bra: "bras",
+  bras: "bras",
+  bralette: "bras",
+  "sports bra": "bras"
+};
 function packBucketOf(type) {
-  return BUCKET_OF[type];
+  return BUCKET_SYNONYMS[type.trim().toLowerCase()];
 }
 function packTargetPerBucket(trip) {
   const days = Math.max(1, Math.floor(trip.days || 1));
@@ -593,7 +632,7 @@ function packRequirements(trip, items, typeLimits) {
   for (const g of (_a = trip.packedClothing) != null ? _a : []) {
     const it = byId.get(g.itemId);
     if (!it) continue;
-    const bucket = BUCKET_OF[it.type];
+    const bucket = packBucketOf(it.type);
     if (!bucket) continue;
     const total = garmentCovers(g);
     const limit = (_b = effectiveWearLimit(it, typeLimits)) != null ? _b : total;
@@ -958,6 +997,37 @@ var ColorPromptModal = class extends import_obsidian27.Modal {
   commit(clear = false) {
     this.onSubmit(clear || !this.value ? void 0 : this.value);
     this.close();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var ColorChoiceModal = class extends import_obsidian27.Modal {
+  constructor(app, colors, onPick) {
+    super(app);
+    this.colors = colors;
+    this.onPick = onPick;
+  }
+  onOpen() {
+    var _a;
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "Which colour?" });
+    const list = contentEl.createDiv({ cls: "mrw-color-choices" });
+    const choose = (c) => {
+      this.onPick(c);
+      this.close();
+    };
+    for (const c of this.colors) {
+      const b = list.createEl("button", { cls: "mrw-color-choice" });
+      const dot = b.createSpan({ cls: "mrw-color-dot" });
+      if ((_a = CSS.supports) == null ? void 0 : _a.call(CSS, "color", c)) dot.style.background = c;
+      else dot.addClass("mrw-color-none");
+      b.createSpan({ text: c });
+      b.onclick = () => choose(c);
+    }
+    const any = list.createEl("button", { cls: "mrw-color-choice", text: "Any colour" });
+    any.onclick = () => choose(void 0);
   }
   onClose() {
     this.contentEl.empty();
@@ -1689,68 +1759,93 @@ var WardrobeView = class extends import_obsidian28.ItemView {
     }
     if (trip.laundryService) box.createSpan({ cls: "mrw-req-note", text: "laundry: \xBD days" });
   }
-  /** Inventory garments assigned to the trip — each with a colour/number, a
-   * days-covered stepper (capped at its wear limit), and a packed checkbox. */
-  renderPackedGarments(root, trip) {
-    var _a;
-    const garments = (_a = trip.packedClothing) != null ? _a : [];
-    const box = root.createDiv({ cls: "mrw-pack-cat" });
-    const h = box.createDiv({ cls: "mrw-pack-cat-h" });
-    h.createSpan({ text: "Wardrobe items" });
-    this.iconBtn(h, "plus", "Add clothing from wardrobe", () => this.plugin.openAddClothingToPacking(trip.id));
-    if (trip.flags.swimming && !trip.swimOutfitId) {
-      const swim = box.createDiv({ cls: "mrw-pack-line mrw-swim-todo" });
-      swim.createSpan({ cls: "mrw-pack-name", text: "\u{1FA71} Swimsuit \u2014 tap to choose your swim outfit" });
-      swim.onclick = (e) => this.plugin.openSwimOutfitPicker(e, trip.id);
-    }
-    if (garments.length === 0) {
-      box.createDiv({ cls: "mrw-empty mrw-slim", text: "Add outfits or clothing to build this list." });
-      return;
-    }
-    const byId = new Map(this.plugin.clothing.getAll().map((i) => [i.id, i]));
-    for (const g of garments) {
-      const item = byId.get(g.itemId);
-      const key = `clothing:${g.id}`;
-      const packed = !!trip.packed[key];
-      const limit = item ? effectiveWearLimit(item, this.plugin.typeLimits()) : void 0;
-      const row = box.createDiv({ cls: "mrw-pack-line mrw-pack-garment" });
-      const cb = row.createEl("input", { attr: { type: "checkbox" } });
-      cb.checked = packed;
-      cb.onchange = () => void this.plugin.setTripPacked(trip.id, key, cb.checked);
-      const covers = garmentCovers(g);
-      const nameWrap = row.createSpan({ cls: "mrw-pack-name" + (packed ? " mrw-packed" : "") });
-      nameWrap.createSpan({ text: item ? item.name : "(deleted item)" });
-      if (g.color) this.colorDot(nameWrap, g.color);
-      const bucket = item ? packBucketOf(item.type) : void 0;
-      if (bucket) nameWrap.createSpan({ cls: "mrw-badge", text: `covers ${covers}${limit ? `/${limit}` : ""} day${covers === 1 ? "" : "s"}` });
-      const step = row.createDiv({ cls: "mrw-covers-step" });
-      this.iconBtn(step, "minus", "Cover fewer days", () => void this.plugin.setPackedCovers(trip.id, g.id, covers - 1));
-      this.iconBtn(step, "plus", "Cover more days", () => void this.plugin.setPackedCovers(trip.id, g.id, covers + 1), !!limit && covers >= limit);
-      this.iconBtn(step, "x", "Remove", () => void this.plugin.removePackedGarment(trip.id, g.id));
+  /** One packed inventory garment row: colour/number, a days-covered stepper, and
+   * a remove button. The "+" adds another day; when the item has multiple colours
+   * it asks which colour to add (so a different-coloured copy can be added), so it
+   * is disabled only when a single-colour line has hit its wear limit. */
+  renderGarmentRow(box, trip, g) {
+    const item = this.plugin.clothing.getAll().find((i) => i.id === g.itemId);
+    const key = `clothing:${g.id}`;
+    const packed = !!trip.packed[key];
+    const limit = item ? effectiveWearLimit(item, this.plugin.typeLimits()) : void 0;
+    const colors = item ? availableColors(item) : [];
+    const covers = garmentCovers(g);
+    const row = box.createDiv({ cls: "mrw-pack-line mrw-pack-garment" });
+    const cb = row.createEl("input", { attr: { type: "checkbox" } });
+    cb.checked = packed;
+    cb.onchange = () => void this.plugin.setTripPacked(trip.id, key, cb.checked);
+    const nameWrap = row.createSpan({ cls: "mrw-pack-name" + (packed ? " mrw-packed" : "") });
+    nameWrap.createSpan({ text: item ? item.name : "(deleted item)" });
+    if (g.color) this.colorDot(nameWrap, g.color);
+    const bucket = item ? packBucketOf(item.type) : void 0;
+    if (bucket) nameWrap.createSpan({ cls: "mrw-badge", text: `covers ${covers}${limit ? `/${limit}` : ""} day${covers === 1 ? "" : "s"}` });
+    const step = row.createDiv({ cls: "mrw-covers-step" });
+    this.iconBtn(step, "minus", "Cover fewer days", () => void this.plugin.setPackedCovers(trip.id, g.id, covers - 1));
+    const plusDisabled = colors.length <= 1 && !!limit && covers >= limit;
+    this.iconBtn(step, "plus", "Cover more days / add a colour", () => this.plugin.addPackedWithColor(trip.id, g.itemId), plusDisabled);
+    this.iconBtn(step, "x", "Remove", () => void this.plugin.removePackedGarment(trip.id, g.id));
+  }
+  /** A highlighted "tap to choose" placeholder for a conditional outfit (swim /
+   * active) shown until one is picked. */
+  renderSpecialPlaceholder(box, trip, kind) {
+    const label = kind === "swim" ? "\u{1FA71} Swimsuit \u2014 tap to choose your swim outfit" : "\u{1F3C3} Activewear \u2014 tap to choose your active outfit";
+    const el = box.createDiv({ cls: "mrw-pack-line mrw-swim-todo" });
+    el.createSpan({ cls: "mrw-pack-name", text: label });
+    el.onclick = (e) => this.plugin.openSpecialOutfitPicker(e, trip.id, kind);
+  }
+  /** One auto/custom packing line (checkbox + name; remove for custom items). */
+  renderPackingLine(box, trip, line) {
+    const key = packingLineKey(line);
+    const row = box.createEl("label", { cls: "mrw-pack-line" });
+    const cb = row.createEl("input", { attr: { type: "checkbox" } });
+    cb.checked = line.packed;
+    cb.onchange = () => void this.plugin.setTripPacked(trip.id, key, cb.checked);
+    const label = row.createSpan({ cls: "mrw-pack-name" + (line.packed ? " mrw-packed" : ""), text: line.name });
+    if (line.qty > 1) label.createSpan({ cls: "mrw-badge", text: `\xD7${line.qty}` });
+    if (line.source === "custom") {
+      const del = row.createEl("button", { cls: "mrw-icon-btn", attr: { "aria-label": "Remove" } });
+      (0, import_obsidian28.setIcon)(del, "x");
+      del.onclick = (e) => {
+        e.preventDefault();
+        void this.plugin.removeTripExtra(trip.id, line.id);
+      };
     }
   }
   renderTripPacking(root, trip) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c, _d, _e;
     const lines = computePacking(trip);
     const garments = (_a = trip.packedClothing) != null ? _a : [];
     const garmentPacked = (g) => !!trip.packed[`clothing:${g.id}`];
     const packedCount = lines.filter((l) => l.packed).length + garments.filter(garmentPacked).length;
     root.createEl("h4", { cls: "mrw-section-h", text: `Packing \xB7 ${packedCount}/${lines.length + garments.length}` });
     this.renderPackRequirements(root, trip);
-    this.renderPackedGarments(root, trip);
     const byCat = /* @__PURE__ */ new Map();
     for (const l of lines) ((_b = byCat.get(l.category)) != null ? _b : byCat.set(l.category, []).get(l.category)).push(l);
+    const clothingBox = root.createDiv({ cls: "mrw-pack-cat" });
+    const ch = clothingBox.createDiv({ cls: "mrw-pack-cat-h" });
+    ch.createSpan({ text: "Clothing" });
+    this.iconBtn(ch, "plus", "Add clothing from wardrobe", () => this.plugin.openAddClothingToPacking(trip.id));
+    const swimTodo = !!trip.flags.swimming && !trip.swimOutfitId;
+    const activeTodo = !!trip.flags.active && !trip.activeOutfitId;
+    if (swimTodo) this.renderSpecialPlaceholder(clothingBox, trip, "swim");
+    if (activeTodo) this.renderSpecialPlaceholder(clothingBox, trip, "active");
+    for (const g of garments) this.renderGarmentRow(clothingBox, trip, g);
+    const clothingLines = (_c = byCat.get("clothing")) != null ? _c : [];
+    for (const line of clothingLines) this.renderPackingLine(clothingBox, trip, line);
+    if (garments.length === 0 && clothingLines.length === 0 && !swimTodo && !activeTodo) {
+      clothingBox.createDiv({ cls: "mrw-empty mrw-slim", text: "Add outfits or clothing to build this list." });
+    }
     const known = ["clothing", "toiletries", "gear", "documents", "other"];
-    const userSections = (_c = trip.sections) != null ? _c : [];
+    const userSections = (_d = trip.sections) != null ? _d : [];
     const order = [];
     const push = (c) => {
-      if (!order.includes(c)) order.push(c);
+      if (c !== "clothing" && !order.includes(c)) order.push(c);
     };
     for (const c of known) if (byCat.has(c)) push(c);
     for (const c of userSections) push(c);
     for (const c of [...byCat.keys()].sort()) if (!known.includes(c)) push(c);
     for (const cat of order) {
-      const items = (_d = byCat.get(cat)) != null ? _d : [];
+      const items = (_e = byCat.get(cat)) != null ? _e : [];
       const isUserSection = userSections.some((s) => s.toLowerCase() === cat.toLowerCase());
       const box = root.createDiv({ cls: "mrw-pack-cat" });
       const h = box.createDiv({ cls: "mrw-pack-cat-h" });
@@ -1761,23 +1856,7 @@ var WardrobeView = class extends import_obsidian28.ItemView {
         box.createDiv({ cls: "mrw-empty mrw-slim", text: "Empty \u2014 add an item." });
         continue;
       }
-      for (const line of items) {
-        const key = packingLineKey(line);
-        const row = box.createEl("label", { cls: "mrw-pack-line" });
-        const cb = row.createEl("input", { attr: { type: "checkbox" } });
-        cb.checked = line.packed;
-        cb.onchange = () => void this.plugin.setTripPacked(trip.id, key, cb.checked);
-        const label = row.createSpan({ cls: "mrw-pack-name" + (line.packed ? " mrw-packed" : ""), text: line.name });
-        if (line.qty > 1) label.createSpan({ cls: "mrw-badge", text: `\xD7${line.qty}` });
-        if (line.source === "custom") {
-          const del = row.createEl("button", { cls: "mrw-icon-btn", attr: { "aria-label": "Remove" } });
-          (0, import_obsidian28.setIcon)(del, "x");
-          del.onclick = (e) => {
-            e.preventDefault();
-            void this.plugin.removeTripExtra(trip.id, line.id);
-          };
-        }
-      }
+      for (const line of items) this.renderPackingLine(box, trip, line);
     }
     const addSection = root.createEl("button", { cls: "mrw-linkbtn", text: "\uFF0B Add section" });
     addSection.onclick = () => new TextPromptModal(this.app, {
@@ -3261,6 +3340,7 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
         ...t,
         plannedOutfitIds: t.plannedOutfitIds.filter((o) => o !== outfitId),
         swimOutfitId: t.swimOutfitId === outfitId ? void 0 : t.swimOutfitId,
+        activeOutfitId: t.activeOutfitId === outfitId ? void 0 : t.activeOutfitId,
         packedClothing: removeOutfitContribution((_a = t.packedClothing) != null ? _a : [], outfitId)
       };
     });
@@ -3333,6 +3413,11 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     const picks = this.plannedOutfitItems(outfit, !!trip.immediateDeparture);
     for (const p of picks) await this.addPackedGarment(id, p.itemId, p.color, outfitId);
     if (picks.length) new import_obsidian36.Notice(`Added ${picks.length} item${picks.length === 1 ? "" : "s"} from ${outfit.name} to packing.`);
+    if (trip.immediateDeparture) {
+      const intended = this.plannedOutfitItems(outfit, false).length;
+      const skipped = intended - picks.length;
+      if (skipped > 0) new import_obsidian36.Notice(`${skipped} piece${skipped === 1 ? "" : "s"} from ${outfit.name} not packed \u2014 not clean for an immediate departure.`);
+    }
   }
   /** Assign a garment to the packing list. Re-assigning the same item+colour
    * raises how many days it covers (capped at the item's wear limit); the extra
@@ -3398,7 +3483,8 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     });
   }
   /** Open the wardrobe picker to add a garment directly to a trip's packing list.
-   * An immediate-departure trip only offers currently-available items. */
+   * An immediate-departure trip only offers currently-available items. When the
+   * chosen item comes in more than one colour, ask which. */
   openAddClothingToPacking(id) {
     const trip = this.trips.getAll().find((t) => t.id === id);
     if (!trip) return;
@@ -3407,33 +3493,41 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     new ItemPickerModal(
       this.app,
       items,
-      (itemId) => {
-        const item = all.find((i) => i.id === itemId);
-        const colors = item ? availableColors(item) : [];
-        if (colors.length > 1) new ColorPromptModal(this.app, void 0, (color) => void this.addPackedGarment(id, itemId, color)).open();
-        else void this.addPackedGarment(id, itemId, colors[0]);
-      },
+      (itemId) => void this.addPackedWithColor(id, itemId),
       { title: trip.immediateDeparture ? "Add available clothing" : "Add clothing to pack" }
     ).open();
   }
-  // ---- swim outfit ----
-  /** Pick the outfit that satisfies the swimming flag (swim-tagged outfits first).
-   * Choosing one records it and runs the normal pack-selection flow. */
-  openSwimOutfitPicker(evt, id) {
+  /** Add a garment to packing, asking which colour first when the item has more
+   * than one (so different-coloured copies are distinguished); adds directly when
+   * there's only one colour (or none). Also used by the per-garment "+" button. */
+  addPackedWithColor(id, itemId) {
+    const item = this.clothing.getAll().find((i) => i.id === itemId);
+    if (!item) return;
+    const colors = availableColors(item);
+    if (colors.length > 1) new ColorChoiceModal(this.app, colors, (color) => void this.addPackedGarment(id, itemId, color)).open();
+    else void this.addPackedGarment(id, itemId, colors[0]);
+  }
+  // ---- swim / active outfit placeholders ----
+  /** Pick the outfit that satisfies a conditional flag (swim / active). Outfits
+   * tagged for that context are offered first. Choosing one records it and runs
+   * the normal pack-selection flow so its pieces are added. */
+  openSpecialOutfitPicker(evt, id, kind) {
+    const tag = kind === "swim" ? "swim" : "active";
+    const emoji = kind === "swim" ? "\u{1FA71}" : "\u{1F3C3}";
     const outfits = this.outfits.getAll().filter((o) => !o.retired);
-    const swimFirst = [...outfits].sort((a, b) => Number(b.tags.includes("swim")) - Number(a.tags.includes("swim")) || a.name.localeCompare(b.name));
-    if (swimFirst.length === 0) {
-      new import_obsidian36.Notice("No outfits yet \u2014 create a swim outfit first.");
+    if (outfits.length === 0) {
+      new import_obsidian36.Notice(`No outfits yet \u2014 create a ${kind} outfit first.`);
       return;
     }
+    const tagged = [...outfits].sort((a, b) => Number(b.tags.includes(tag)) - Number(a.tags.includes(tag)) || a.name.localeCompare(b.name));
     const menu = new import_obsidian36.Menu();
-    for (const o of swimFirst) {
-      menu.addItem((i) => i.setTitle(o.name + (o.tags.includes("swim") ? "  \u{1FA71}" : "")).onClick(() => void this.setSwimOutfit(id, o.id)));
+    for (const o of tagged) {
+      menu.addItem((i) => i.setTitle(o.name + (o.tags.includes(tag) ? `  ${emoji}` : "")).onClick(() => void this.setSpecialOutfit(id, o.id, kind)));
     }
     menu.showAtMouseEvent(evt);
   }
-  async setSwimOutfit(id, outfitId) {
-    await this.mutateTrip(id, (t) => ({ ...t, swimOutfitId: outfitId }));
+  async setSpecialOutfit(id, outfitId, kind) {
+    await this.mutateTrip(id, (t) => kind === "swim" ? { ...t, swimOutfitId: outfitId } : { ...t, activeOutfitId: outfitId });
     await this.addPlannedOutfit(id, outfitId);
   }
   // ---- printable / exportable lists ----
