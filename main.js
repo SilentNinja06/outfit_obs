@@ -389,6 +389,25 @@ var CONTEXT_TAGS = [
   "travel"
 ];
 var COLOR_SUGGESTIONS = ["black", "white", "grey", "cream", "beige", "brown", "tan", "navy", "blue", "teal", "green", "olive", "red", "maroon", "pink", "purple", "orange", "yellow", "gold", "silver"];
+var MANUAL_SOURCE = "manual";
+function garmentCovers(g) {
+  let n = 0;
+  for (const k in g.sources) n += g.sources[k];
+  return n;
+}
+function removeOutfitContribution(garments, outfitId) {
+  const out = [];
+  for (const g of garments) {
+    if (!(outfitId in g.sources)) {
+      out.push(g);
+      continue;
+    }
+    const sources = { ...g.sources };
+    delete sources[outfitId];
+    if (garmentCovers({ sources }) > 0) out.push({ ...g, sources });
+  }
+  return out;
+}
 var DEFAULT_WEAR_LIMIT = {
   underwear: 1,
   bra: 2,
@@ -576,8 +595,9 @@ function packRequirements(trip, items, typeLimits) {
     if (!it) continue;
     const bucket = BUCKET_OF[it.type];
     if (!bucket) continue;
-    const limit = (_b = effectiveWearLimit(it, typeLimits)) != null ? _b : g.covers;
-    covered[bucket] += Math.min(g.covers, limit);
+    const total = garmentCovers(g);
+    const limit = (_b = effectiveWearLimit(it, typeLimits)) != null ? _b : total;
+    covered[bucket] += Math.min(total, limit);
   }
   return PACK_BUCKETS.map((bucket) => ({ bucket, target, covered: covered[bucket], remaining: Math.max(0, target - covered[bucket]) }));
 }
@@ -1697,14 +1717,15 @@ var WardrobeView = class extends import_obsidian28.ItemView {
       const cb = row.createEl("input", { attr: { type: "checkbox" } });
       cb.checked = packed;
       cb.onchange = () => void this.plugin.setTripPacked(trip.id, key, cb.checked);
+      const covers = garmentCovers(g);
       const nameWrap = row.createSpan({ cls: "mrw-pack-name" + (packed ? " mrw-packed" : "") });
       nameWrap.createSpan({ text: item ? item.name : "(deleted item)" });
       if (g.color) this.colorDot(nameWrap, g.color);
       const bucket = item ? packBucketOf(item.type) : void 0;
-      if (bucket) nameWrap.createSpan({ cls: "mrw-badge", text: `covers ${g.covers}${limit ? `/${limit}` : ""} day${g.covers === 1 ? "" : "s"}` });
+      if (bucket) nameWrap.createSpan({ cls: "mrw-badge", text: `covers ${covers}${limit ? `/${limit}` : ""} day${covers === 1 ? "" : "s"}` });
       const step = row.createDiv({ cls: "mrw-covers-step" });
-      this.iconBtn(step, "minus", "Cover fewer days", () => void this.plugin.setPackedCovers(trip.id, g.id, g.covers - 1));
-      this.iconBtn(step, "plus", "Cover more days", () => void this.plugin.setPackedCovers(trip.id, g.id, g.covers + 1), !!limit && g.covers >= limit);
+      this.iconBtn(step, "minus", "Cover fewer days", () => void this.plugin.setPackedCovers(trip.id, g.id, covers - 1));
+      this.iconBtn(step, "plus", "Cover more days", () => void this.plugin.setPackedCovers(trip.id, g.id, covers + 1), !!limit && covers >= limit);
       this.iconBtn(step, "x", "Remove", () => void this.plugin.removePackedGarment(trip.id, g.id));
     }
   }
@@ -2720,7 +2741,7 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     this.registerEvent(this.app.vault.on("modify", (f) => this.onVaultChange(f.path)));
     this.registerEvent(this.app.vault.on("create", (f) => this.onVaultChange(f.path)));
     this.app.workspace.onLayoutReady(() => {
-      void Promise.all([this.clothing.load(), this.outfits.load(), this.wishlist.load(), this.trips.load(), this.catalog.load(), this.schedule.load()]).then(() => this.migratePresentations()).then(() => this.refresh());
+      void Promise.all([this.clothing.load(), this.outfits.load(), this.wishlist.load(), this.trips.load(), this.catalog.load(), this.schedule.load()]).then(() => this.migratePresentations()).then(() => this.migratePackedGarments()).then(() => this.refresh());
     });
   }
   /** One-time migration: presentation went from a single value to a set (an item
@@ -2762,6 +2783,33 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     if (w.changed) {
       this.wishlist.setAll(w.records);
       await this.wishlist.save();
+    }
+  }
+  /** One-time migration: packed garments used a single `covers` total plus an
+   * optional `sourceOutfitId`. Move that into the per-source `sources` map so an
+   * outfit's contribution can be removed independently of separately-added
+   * coverage. No-op once migrated (sync-safe). */
+  async migratePackedGarments() {
+    let changed = false;
+    const trips = this.trips.getAll().map((t) => {
+      const list = t.packedClothing;
+      if (!list || list.length === 0) return t;
+      let touched = false;
+      const migrated = list.map((g) => {
+        if (g.sources && typeof g.sources === "object") return g;
+        touched = true;
+        const covers = typeof g.covers === "number" && g.covers > 0 ? g.covers : 1;
+        const src = g.sourceOutfitId || MANUAL_SOURCE;
+        const { covers: _c, sourceOutfitId: _s, ...rest } = g;
+        return { ...rest, sources: { [src]: covers } };
+      });
+      if (!touched) return t;
+      changed = true;
+      return { ...t, packedClothing: migrated };
+    });
+    if (changed) {
+      this.trips.setAll(trips);
+      await this.trips.save();
     }
   }
   /** Ids of clothing items with at least one currently-wearable unit. Computed
@@ -3203,8 +3251,19 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
   async addTripOutfit(id, outfitId) {
     await this.mutateTrip(id, (t) => t.plannedOutfitIds.includes(outfitId) ? t : { ...t, plannedOutfitIds: [...t.plannedOutfitIds, outfitId] });
   }
+  /** Remove a planned outfit AND the packing coverage it contributed — but only
+   * its share: coverage added separately (manual) or via other outfits stays.
+   * (Underwear was never added from outfits, so nothing there is touched.) */
   async removeTripOutfit(id, outfitId) {
-    await this.mutateTrip(id, (t) => ({ ...t, plannedOutfitIds: t.plannedOutfitIds.filter((o) => o !== outfitId) }));
+    await this.mutateTrip(id, (t) => {
+      var _a;
+      return {
+        ...t,
+        plannedOutfitIds: t.plannedOutfitIds.filter((o) => o !== outfitId),
+        swimOutfitId: t.swimOutfitId === outfitId ? void 0 : t.swimOutfitId,
+        packedClothing: removeOutfitContribution((_a = t.packedClothing) != null ? _a : [], outfitId)
+      };
+    });
   }
   /** Plan an outfit for a trip: add it to the outfit list AND add its required
    * garments to the packing list. When the outfit has variations (alternatives,
@@ -3276,8 +3335,10 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     if (picks.length) new import_obsidian36.Notice(`Added ${picks.length} item${picks.length === 1 ? "" : "s"} from ${outfit.name} to packing.`);
   }
   /** Assign a garment to the packing list. Re-assigning the same item+colour
-   * raises how many days it covers, capped at the item's wear limit. */
-  async addPackedGarment(id, itemId, color, sourceOutfitId) {
+   * raises how many days it covers (capped at the item's wear limit); the extra
+   * day is credited to `source` — an outfit id, or MANUAL_SOURCE for a direct add
+   * — so removing that source later subtracts exactly its contribution. */
+  async addPackedGarment(id, itemId, color, source = MANUAL_SOURCE) {
     var _a;
     const item = this.clothing.getAll().find((i) => i.id === itemId);
     if (!item) return;
@@ -3287,14 +3348,15 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
       return g.itemId === itemId && ((_a2 = g.color) != null ? _a2 : "").trim().toLowerCase() === (color != null ? color : "").trim().toLowerCase();
     };
     await this.mutateTrip(id, (t) => {
-      var _a2;
+      var _a2, _b;
       const list = (_a2 = t.packedClothing) != null ? _a2 : [];
       const existing = list.find(same);
       if (existing) {
-        const covers = Math.min(existing.covers + 1, limit);
-        return { ...t, packedClothing: list.map((g) => g === existing ? { ...g, covers } : g) };
+        if (garmentCovers(existing) >= limit) return t;
+        const sources = { ...existing.sources, [source]: ((_b = existing.sources[source]) != null ? _b : 0) + 1 };
+        return { ...t, packedClothing: list.map((g) => g === existing ? { ...g, sources } : g) };
       }
-      return { ...t, packedClothing: [...list, { id: genId("pg"), itemId, color, covers: 1, sourceOutfitId }] };
+      return { ...t, packedClothing: [...list, { id: genId("pg"), itemId, color, sources: { [source]: 1 } }] };
     });
   }
   async removePackedGarment(id, packedId) {
@@ -3303,18 +3365,36 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
       return { ...t, packedClothing: ((_a = t.packedClothing) != null ? _a : []).filter((g) => g.id !== packedId) };
     });
   }
-  /** Set how many days a packed garment covers (clamped to 1..wear-limit; 0 removes it). */
+  /** Set how many days a packed garment covers (clamped to 0..wear-limit; 0 removes
+   * it). Increases credit the "manual" source; decreases trim manual coverage
+   * first, then outfit coverage — a hand override always reflects the total. */
   async setPackedCovers(id, packedId, covers) {
     await this.mutateTrip(id, (t) => {
-      var _a, _b;
+      var _a, _b, _c;
       const list = (_a = t.packedClothing) != null ? _a : [];
       const g = list.find((x) => x.id === packedId);
       if (!g) return t;
       const item = this.clothing.getAll().find((i) => i.id === g.itemId);
       const limit = item ? (_b = effectiveWearLimit(item, this.typeLimits())) != null ? _b : Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
-      const c = Math.max(0, Math.min(Math.floor(covers), limit));
-      if (c === 0) return { ...t, packedClothing: list.filter((x) => x.id !== packedId) };
-      return { ...t, packedClothing: list.map((x) => x.id === packedId ? { ...x, covers: c } : x) };
+      const target = Math.max(0, Math.min(Math.floor(covers), limit));
+      const current = garmentCovers(g);
+      if (target === current) return t;
+      if (target === 0) return { ...t, packedClothing: list.filter((x) => x.id !== packedId) };
+      const sources = { ...g.sources };
+      if (target > current) {
+        sources[MANUAL_SOURCE] = ((_c = sources[MANUAL_SOURCE]) != null ? _c : 0) + (target - current);
+      } else {
+        let toRemove = current - target;
+        const keys = Object.keys(sources).sort((a, b) => a === MANUAL_SOURCE ? -1 : b === MANUAL_SOURCE ? 1 : 0);
+        for (const k of keys) {
+          if (toRemove <= 0) break;
+          const take = Math.min(sources[k], toRemove);
+          sources[k] -= take;
+          toRemove -= take;
+          if (sources[k] <= 0) delete sources[k];
+        }
+      }
+      return { ...t, packedClothing: list.map((x) => x.id === packedId ? { ...x, sources } : x) };
     });
   }
   /** Open the wardrobe picker to add a garment directly to a trip's packing list.
@@ -3432,7 +3512,8 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
         const name = it ? it.name : "(deleted item)";
         const limit = it ? effectiveWearLimit(it, this.typeLimits()) : void 0;
         const bucket = it ? packBucketOf(it.type) : void 0;
-        const cover = bucket ? ` \u2014 covers ${g.covers}${limit ? `/${limit}` : ""} day${g.covers === 1 ? "" : "s"}` : "";
+        const covers = garmentCovers(g);
+        const cover = bucket ? ` \u2014 covers ${covers}${limit ? `/${limit}` : ""} day${covers === 1 ? "" : "s"}` : "";
         L.push(`- [ ] ${name}${g.color ? ` (${g.color})` : ""}${cover}`);
       }
       L.push("");
