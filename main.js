@@ -159,6 +159,11 @@ var JsonListStore = class {
     this.lastSerialized = "";
     this.unreadable = false;
     this.everLoaded = false;
+    /** True while we're writing the file. Our own write fires a vault "modify"
+     * event; reacting to it (reloading) mid-write can clobber in-memory records
+     * that are ahead of disk during a burst of saves. Skip external-change handling
+     * while this is set. */
+    this.writing = false;
     this.lastStatus = "not loaded yet";
   }
   getAll() {
@@ -254,42 +259,48 @@ var JsonListStore = class {
       console.warn("dash-core: skipping save \u2014 last read was unreadable (protecting the file):", this.path());
       return;
     }
-    if (!this.everLoaded) {
-      const existing2 = this.app.vault.getAbstractFileByPath(this.path());
-      if (existing2 instanceof import_obsidian9.TFile) {
-        try {
-          const res = tryParseList(await this.app.vault.read(existing2), this.opts.isValid);
-          if (res.ok) this.records = unionRecordsById(res.records, this.records);
-          else {
-            this.unreadable = true;
-            console.warn("dash-core: file appeared but didn't parse on save \u2014 preserving it:", this.path());
+    this.writing = true;
+    try {
+      if (!this.everLoaded) {
+        const existing2 = this.app.vault.getAbstractFileByPath(this.path());
+        if (existing2 instanceof import_obsidian9.TFile) {
+          try {
+            const res = tryParseList(await this.app.vault.read(existing2), this.opts.isValid);
+            if (res.ok) this.records = unionRecordsById(res.records, this.records);
+            else {
+              this.unreadable = true;
+              console.warn("dash-core: file appeared but didn't parse on save \u2014 preserving it:", this.path());
+              return;
+            }
+          } catch (e) {
+            console.error("dash-core: could not re-read before save \u2014 preserving the file:", this.path(), e);
             return;
           }
-        } catch (e) {
-          console.error("dash-core: could not re-read before save \u2014 preserving the file:", this.path(), e);
-          return;
         }
       }
+      const body = buildListMarkdown(this.records, this.opts.header);
+      if (body === this.lastSerialized) return;
+      const path = this.path();
+      const existing = this.app.vault.getAbstractFileByPath(path);
+      if (!(existing instanceof import_obsidian9.TFile) && this.records.length === 0) return;
+      this.lastSerialized = body;
+      if (existing instanceof import_obsidian9.TFile) {
+        await this.app.vault.modify(existing, body);
+      } else {
+        await this.ensureFolder(path);
+        await this.app.vault.create(path, body);
+      }
+      this.everLoaded = true;
+      (_b = (_a = this.opts).setBackup) == null ? void 0 : _b.call(_a, this.records);
+    } finally {
+      this.writing = false;
     }
-    const body = buildListMarkdown(this.records, this.opts.header);
-    if (body === this.lastSerialized) return;
-    const path = this.path();
-    const existing = this.app.vault.getAbstractFileByPath(path);
-    if (!(existing instanceof import_obsidian9.TFile) && this.records.length === 0) return;
-    this.lastSerialized = body;
-    if (existing instanceof import_obsidian9.TFile) {
-      await this.app.vault.modify(existing, body);
-    } else {
-      await this.ensureFolder(path);
-      await this.app.vault.create(path, body);
-    }
-    this.everLoaded = true;
-    (_b = (_a = this.opts).setBackup) == null ? void 0 : _b.call(_a, this.records);
   }
   /** React to a vault change on the file (Sync landing another device's edit).
    * Returns true if the in-memory list actually changed. */
   async onExternalChange(path) {
     if (!this.isStorePath(path)) return false;
+    if (this.writing) return false;
     const before = this.lastSerialized;
     await this.load();
     return this.lastSerialized !== before;
@@ -3346,19 +3357,29 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     });
   }
   /** Plan an outfit for a trip: add it to the outfit list AND add ALL of its
-   * required garments to the packing list. Every slot is imported (specific slots
-   * by their primary; flexible "any …" slots by the best matching item), so the
-   * whole outfit comes across; underwear is skipped (auto by day count). Any slot
-   * that can't be resolved to an item is reported by name rather than dropped
-   * silently, so nothing goes missing without explanation. */
+   * required garments to the packing list — in a SINGLE save. Every slot is
+   * imported (specific slots by their primary; flexible "any …" slots by the best
+   * matching item), so the whole outfit comes across; underwear is skipped (auto
+   * by day count). Any slot that can't be resolved to an item is reported by name
+   * rather than dropped silently. */
   async addPlannedOutfit(id, outfitId) {
-    await this.addTripOutfit(id, outfitId);
-    await this.addOutfitToPacking(id, outfitId);
+    const outfit = this.outfits.getAll().find((o) => o.id === outfitId);
+    if (!outfit) return;
+    const { picks, skipped } = this.resolveOutfitPacking(outfit);
+    await this.mutateTrip(id, (t) => this.applyOutfitToTrip(t, outfitId, picks));
+    this.noticeOutfitPacking(outfit, picks, skipped);
   }
-  /** Add several chosen garments to a trip's packing list at once. */
+  /** Add several chosen garments to a trip's packing list in one save. */
   async addPackedGarments(id, choices, sourceOutfitId) {
-    for (const c of choices) await this.addPackedGarment(id, c.itemId, c.color, sourceOutfitId);
-    if (choices.length) new import_obsidian36.Notice(`Added ${choices.length} item${choices.length === 1 ? "" : "s"} to packing.`);
+    if (choices.length === 0) return;
+    const source = sourceOutfitId != null ? sourceOutfitId : MANUAL_SOURCE;
+    await this.mutateTrip(id, (t) => {
+      var _a;
+      let list = (_a = t.packedClothing) != null ? _a : [];
+      for (const c of choices) list = this.addGarmentToList(list, c.itemId, c.color, source);
+      return { ...t, packedClothing: list };
+    });
+    new import_obsidian36.Notice(`Added ${choices.length} item${choices.length === 1 ? "" : "s"} to packing.`);
   }
   // ---- packed clothing (inventory garments on the packing list) ----
   /** Resolve every slot of an outfit to a concrete garment for packing. Specific
@@ -3392,40 +3413,50 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     }
     return { picks, skipped };
   }
-  async addOutfitToPacking(id, outfitId) {
-    const outfit = this.outfits.getAll().find((o) => o.id === outfitId);
-    const trip = this.trips.getAll().find((t) => t.id === id);
-    if (!outfit || !trip) return;
-    const { picks, skipped } = this.resolveOutfitPacking(outfit);
-    for (const p of picks) await this.addPackedGarment(id, p.itemId, p.color, outfitId);
+  /** Return a trip updated with an outfit planned into it: the outfit added to the
+   * planned list, and its `picks` folded into packedClothing. Pure — the caller
+   * wraps it in a single mutateTrip so the whole add is one save. */
+  applyOutfitToTrip(t, outfitId, picks) {
+    var _a;
+    let list = (_a = t.packedClothing) != null ? _a : [];
+    for (const p of picks) list = this.addGarmentToList(list, p.itemId, p.color, outfitId);
+    return {
+      ...t,
+      plannedOutfitIds: t.plannedOutfitIds.includes(outfitId) ? t.plannedOutfitIds : [...t.plannedOutfitIds, outfitId],
+      packedClothing: list
+    };
+  }
+  noticeOutfitPacking(outfit, picks, skipped) {
     const parts = [];
     if (picks.length) parts.push(`Added ${picks.length} item${picks.length === 1 ? "" : "s"} from ${outfit.name}`);
     if (skipped.length) parts.push(`couldn't add ${skipped.join(", ")} \u2014 no matching item in your wardrobe`);
     if (parts.length) new import_obsidian36.Notice(parts.join("; ") + ".");
   }
-  /** Assign a garment to the packing list. Re-assigning the same item+colour
-   * raises how many days it covers (capped at the item's wear limit); the extra
-   * day is credited to `source` — an outfit id, or MANUAL_SOURCE for a direct add
-   * — so removing that source later subtracts exactly its contribution. */
-  async addPackedGarment(id, itemId, color, source = MANUAL_SOURCE) {
+  /** Pure: add one day of coverage for item+colour to a packed-clothing list,
+   * crediting `source`. Dedupes by item+colour (so it never adds a second line for
+   * the same copy) and caps total coverage at the item's wear limit. Returns a new
+   * list; the running list is threaded when adding several at once. */
+  addGarmentToList(list, itemId, color, source) {
     var _a;
     const item = this.clothing.getAll().find((i) => i.id === itemId);
-    if (!item) return;
+    if (!item) return list;
     const limit = (_a = effectiveWearLimit(item, this.typeLimits())) != null ? _a : Number.MAX_SAFE_INTEGER;
-    const same = (g) => {
-      var _a2;
-      return g.itemId === itemId && ((_a2 = g.color) != null ? _a2 : "").trim().toLowerCase() === (color != null ? color : "").trim().toLowerCase();
-    };
+    const norm = (c) => (c != null ? c : "").trim().toLowerCase();
+    const existing = list.find((g) => g.itemId === itemId && norm(g.color) === norm(color));
+    if (existing) {
+      if (garmentCovers(existing) >= limit) return list;
+      return list.map((g) => {
+        var _a2;
+        return g === existing ? { ...g, sources: { ...g.sources, [source]: ((_a2 = g.sources[source]) != null ? _a2 : 0) + 1 } } : g;
+      });
+    }
+    return [...list, { id: genId("pg"), itemId, color, sources: { [source]: 1 } }];
+  }
+  /** Assign a single garment to the packing list (one save). */
+  async addPackedGarment(id, itemId, color, source = MANUAL_SOURCE) {
     await this.mutateTrip(id, (t) => {
-      var _a2, _b;
-      const list = (_a2 = t.packedClothing) != null ? _a2 : [];
-      const existing = list.find(same);
-      if (existing) {
-        if (garmentCovers(existing) >= limit) return t;
-        const sources = { ...existing.sources, [source]: ((_b = existing.sources[source]) != null ? _b : 0) + 1 };
-        return { ...t, packedClothing: list.map((g) => g === existing ? { ...g, sources } : g) };
-      }
-      return { ...t, packedClothing: [...list, { id: genId("pg"), itemId, color, sources: { [source]: 1 } }] };
+      var _a;
+      return { ...t, packedClothing: this.addGarmentToList((_a = t.packedClothing) != null ? _a : [], itemId, color, source) };
     });
   }
   async removePackedGarment(id, packedId) {
@@ -3511,8 +3542,14 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     menu.showAtMouseEvent(evt);
   }
   async setSpecialOutfit(id, outfitId, kind) {
-    await this.mutateTrip(id, (t) => kind === "swim" ? { ...t, swimOutfitId: outfitId } : { ...t, activeOutfitId: outfitId });
-    await this.addPlannedOutfit(id, outfitId);
+    const outfit = this.outfits.getAll().find((o) => o.id === outfitId);
+    if (!outfit) return;
+    const { picks, skipped } = this.resolveOutfitPacking(outfit);
+    await this.mutateTrip(id, (t) => {
+      const base = this.applyOutfitToTrip(t, outfitId, picks);
+      return kind === "swim" ? { ...base, swimOutfitId: outfitId } : { ...base, activeOutfitId: outfitId };
+    });
+    this.noticeOutfitPacking(outfit, picks, skipped);
   }
   // ---- printable / exportable lists ----
   tripNotePath(trip, kind) {
