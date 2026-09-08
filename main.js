@@ -3345,30 +3345,14 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
       };
     });
   }
-  /** Plan an outfit for a trip: add it to the outfit list AND add its required
-   * garments to the packing list. When the outfit has variations (alternatives,
-   * optional pieces, flexible slots, or multi-colour items) a picker opens so you
-   * choose which version/items to pack; otherwise the intended items are added. */
+  /** Plan an outfit for a trip: add it to the outfit list AND add ALL of its
+   * required garments to the packing list. Every slot is imported (specific slots
+   * by their primary; flexible "any …" slots by the best matching item), so the
+   * whole outfit comes across; underwear is skipped (auto by day count). Any slot
+   * that can't be resolved to an item is reported by name rather than dropped
+   * silently, so nothing goes missing without explanation. */
   async addPlannedOutfit(id, outfitId) {
     await this.addTripOutfit(id, outfitId);
-    const outfit = this.outfits.getAll().find((o) => o.id === outfitId);
-    const trip = this.trips.getAll().find((t) => t.id === id);
-    if (!outfit || !trip) return;
-    const ctx = this.resolveCtx();
-    if (outfitHasChoices(outfit, ctx.items)) {
-      new WearOutfitModal(this.app, {
-        outfit,
-        items: ctx.items,
-        typeLimits: ctx.typeLimits,
-        title: `Pack \u201C${outfit.name}\u201D`,
-        subtitle: "Pick which version/items to pack. Untick a slot to leave it out.",
-        confirmLabel: "Add to packing",
-        skipTypes: ["underwear"],
-        includeUnavailable: !trip.immediateDeparture,
-        onConfirm: (choices) => void this.addPackedGarments(id, choices, outfitId)
-      }).open();
-      return;
-    }
     await this.addOutfitToPacking(id, outfitId);
   }
   /** Add several chosen garments to a trip's packing list at once. */
@@ -3377,47 +3361,47 @@ var MeridianWardrobePlugin = class extends import_obsidian36.Plugin {
     if (choices.length) new import_obsidian36.Notice(`Added ${choices.length} item${choices.length === 1 ? "" : "s"} to packing.`);
   }
   // ---- packed clothing (inventory garments on the packing list) ----
-  /** The garments an outfit contributes to packing. For an immediate departure
-   * only currently-available pieces count (via resolveOutfit); for a planned trip
-   * the intended primary/flex items are used regardless of current availability.
-   * Underwear is skipped — it's auto-added by day count. */
-  plannedOutfitItems(outfit, immediate) {
-    var _a;
+  /** Resolve every slot of an outfit to a concrete garment for packing. Specific
+   * slots use their primary item; flexible slots use the best matching item
+   * (available preferred, else any match). Underwear is skipped. Required slots
+   * that resolve to nothing are returned in `skipped` (by label) so the caller can
+   * surface them instead of silently dropping the piece. */
+  resolveOutfitPacking(outfit) {
+    var _a, _b;
     const ctx = this.resolveCtx();
     const byId = new Map(ctx.items.map((i) => [i.id, i]));
-    const out = [];
-    const consider = (itemId, color) => {
-      if (!itemId) return;
-      const it = byId.get(itemId);
-      if (!it || it.type === "underwear") return;
-      out.push({ itemId, color });
-    };
-    if (immediate) {
-      for (const s of resolveOutfit(outfit, ctx).slots) if (s.chosenItemId) consider(s.chosenItemId, s.chosenColor);
-      return out;
-    }
+    const picks = [];
+    const skipped = [];
     for (const slot of outfit.slots) {
+      let itemId;
+      let color;
       if (isFlexibleSlot(slot)) {
-        const match = (_a = ctx.items.find((it) => itemMatchesCriteria(it, slot.match) && itemAvailability(it, ctx.typeLimits).available)) != null ? _a : ctx.items.find((it) => itemMatchesCriteria(it, slot.match));
-        consider(match == null ? void 0 : match.id);
+        const match = (_a = ctx.items.find((it2) => itemMatchesCriteria(it2, slot.match) && itemAvailability(it2, ctx.typeLimits).available)) != null ? _a : ctx.items.find((it2) => itemMatchesCriteria(it2, slot.match));
+        itemId = match == null ? void 0 : match.id;
       } else {
-        consider(slot.primaryItemId || void 0, slot.color);
+        itemId = slot.primaryItemId || void 0;
+        color = slot.color;
       }
+      const it = itemId ? byId.get(itemId) : void 0;
+      if (!it) {
+        if (!slot.optional) skipped.push(((_b = slot.label) == null ? void 0 : _b.trim()) || "a piece");
+        continue;
+      }
+      if (it.type === "underwear") continue;
+      picks.push({ itemId: it.id, color });
     }
-    return out;
+    return { picks, skipped };
   }
   async addOutfitToPacking(id, outfitId) {
     const outfit = this.outfits.getAll().find((o) => o.id === outfitId);
     const trip = this.trips.getAll().find((t) => t.id === id);
     if (!outfit || !trip) return;
-    const picks = this.plannedOutfitItems(outfit, !!trip.immediateDeparture);
+    const { picks, skipped } = this.resolveOutfitPacking(outfit);
     for (const p of picks) await this.addPackedGarment(id, p.itemId, p.color, outfitId);
-    if (picks.length) new import_obsidian36.Notice(`Added ${picks.length} item${picks.length === 1 ? "" : "s"} from ${outfit.name} to packing.`);
-    if (trip.immediateDeparture) {
-      const intended = this.plannedOutfitItems(outfit, false).length;
-      const skipped = intended - picks.length;
-      if (skipped > 0) new import_obsidian36.Notice(`${skipped} piece${skipped === 1 ? "" : "s"} from ${outfit.name} not packed \u2014 not clean for an immediate departure.`);
-    }
+    const parts = [];
+    if (picks.length) parts.push(`Added ${picks.length} item${picks.length === 1 ? "" : "s"} from ${outfit.name}`);
+    if (skipped.length) parts.push(`couldn't add ${skipped.join(", ")} \u2014 no matching item in your wardrobe`);
+    if (parts.length) new import_obsidian36.Notice(parts.join("; ") + ".");
   }
   /** Assign a garment to the packing list. Re-assigning the same item+colour
    * raises how many days it covers (capped at the item's wear limit); the extra
